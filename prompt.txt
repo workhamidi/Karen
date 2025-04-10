@@ -1,0 +1,55 @@
+
+- Fields marked as “Persian” must be written in Persian.
+- Fields marked as “English” must be written in English.
+- All other fields (e.g., URLs, arrays, numbers) follow standard JSON conventions and remain in English.
+- Return all 10 JSON objects inside a single array, like this: [{object1}, {object2}, ..., {object10}].
+
+### JSON Structure and Field Descriptions (with Data Types):
+
+1. `"word"` (String, English): The vocabulary word in the source language.  
+2. `"meaning"` (String, Persian): The translation of the word into the target language.  
+3. `"part_of_speech"` (String, English): The grammatical category (e.g., noun, verb, adjective).  
+4. `"phonetic_farsi"` (String, English/Persian): Phonetic transcription in English followed by a Persian approximation (e.g., `/ɪˈbʌl.i.ənt/ ای-بال-یِنت`).  
+5. `"etymology"` (String, Persian): The historical origin of the word, written in Persian.  
+6. `"examples"` (Array of 2 Objects):  
+   - Each object contains:  
+     - `"sentence"` (String, English): Example sentence.  
+     - `"translation"` (String, Persian): Translation of the example sentence.  
+7. `"mnemonics"` (Array of 3 Objects):  
+   - Each object contains:  
+     - `"technique"` (String, English): Must be one of the following mnemonic techniques:  
+       - Word Breakdown  
+       - Visualization  
+       - Sound Association  
+       - Storytelling  
+       - Etymology-Based  
+       - Conceptual Comparison  
+       - Physical Tagging  
+     - `"text"` (String, Persian): A creative and diverse mnemonic explanation written in Persian.  
+8. `"visual_mnemonic"` (String, English): A placeholder URL for a visual mnemonic (e.g., `https://example.com/[word].jpg`).  
+9. `"collocations"` (Array of 2 Strings, English): Common phrases that use the word.  
+10. `"common_mistakes"` (Array of 2 Strings, Persian): Common learner mistakes.  
+11. `"formality_level"` (String, English): One of: `formal`, `neutral`, `informal`.  
+12. `"cultural_notes"` (String, Persian): Notes on how the word is used in specific cultural or social contexts.  
+13. `"gesture_association"` (String, Persian): A physical gesture associated with the word.  
+14. `"emotional_connotation"` (String, English): One of: `positive`, `negative`, `neutral`.  
+15. `"grammar_notes"` (String, Persian): Notes on how the word is used grammatically.  
+16. `"word_family"` (Array of 2 Strings, English): Related words with part of speech, e.g., `"ebullience (noun)"`.  
+17. `"variants"` (Array of Strings, English): List of alternate spellings or pronunciations. Leave empty if none.  
+18. `"memory_strength"` (Number): A number between 0–100 indicating recall strength.  
+19. `"spaced_repetition_dates"` (Array of 3 Strings, Format: YYYY-MM-DD): Review dates based on the current date (e.g., today, tomorrow, one week from today).  
+20. `"difficulty_level"` (String, English): One of: `Beginner`, `Intermediate`, `Advanced`.  
+21. `"category"` (String, English): Thematic category (e.g., `Emotions`, `Personality`).  
+22. `"synonyms"` (Array of 2 Strings, English): Synonyms of the word.  
+23. `"antonyms"` (Array of 2 Strings, English): Antonyms of the word.  
+24. `"usage_frequency"` (String, English): One of: `Common`, `Uncommon`, `Rare`.  
+25. `"related_words"` (Array of 2 Strings, English): Related words in meaning.  
+26. `"source"` (String, English): Context of use (e.g., `Everyday conversation`, `Literature`).  
+27. `"notes"` (String, Persian): Additional notes in the target language.  
+28. `"example_audio_url"` (String, English): Placeholder URL for example pronunciation audio (e.g., `https://example.com/[word].mp3`).  
+29. `"is_deleted"` (Boolean, English): Indicates if the word is marked as deleted. Default value is `false`.  
+30. `"correct_reviews"` (Number): Tracks the number of correct reviews for the word. Default value is `0`. The model should not modify this value; leave it as `0`.  
+31. `"wrong_reviews"` (Number): Tracks the number of incorrect reviews for the word. Default value is `0`. The model should not modify this value; leave it as `0`.
+
+### Task:
+Generate 10 JSON objects following this exact structure and return them in a single array. For each, choose a unique English word and fill all fields accordingly. Use the current date as a reference for spaced repetition dates (e.g., today, tomorrow, one week from today), ensuring dates are dynamically calculated based on the day of execution, not hardcoded.
