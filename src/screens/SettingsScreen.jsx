@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import Box from '@mui/material/Box';
 import AppBar from '@mui/material/AppBar';
@@ -8,68 +8,69 @@ import Typography from '@mui/material/Typography';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import TextField from '@mui/material/TextField';
 import Paper from '@mui/material/Paper';
-import { colors } from '../styles/colors';
-
-const SETTINGS_KEY = 'appFlashcardSettings';
-
-const defaultSettings = {
-  spreadsheetId: '',
-  clientId: '',
-};
+import CircularProgress from '@mui/material/CircularProgress'; // For loading state
+import { colors } from '../styles/colors'; // Assuming you have this file
+import { useSettings } from '../context/SettingsContext';
 
 const SettingsScreen = () => {
   const navigate = useNavigate();
-  const [settings, setSettings] = useState({
-    spreadsheetId: '',
-    clientId: '',
-  });
-
-  useEffect(() => {
-    const storedSettings = localStorage.getItem(SETTINGS_KEY);
-    if (storedSettings) {
-      try {
-        const parsedSettings = JSON.parse(storedSettings);
-        setSettings({
-          spreadsheetId: parsedSettings.spreadsheetId || '',
-          clientId: parsedSettings.clientId || '',
-        });
-      } catch (error) {
-        console.error("Failed to parse settings from localStorage", error);
-        setSettings({ spreadsheetId: '', clientId: '' });
-      }
-    } else {
-      setSettings({ spreadsheetId: '', clientId: '' });
-    }
-  }, []);
-
-  const saveSettings = useCallback((newSettings) => {
-    try {
-      const existingSettingsRaw = localStorage.getItem(SETTINGS_KEY);
-      let existingSettings = {};
-      if (existingSettingsRaw) {
-        try {
-          existingSettings = JSON.parse(existingSettingsRaw);
-        } catch {
-            // ignore parsing errors of old data
-        }
-      }
-      const settingsToSave = { ...existingSettings, ...newSettings };
-      localStorage.setItem(SETTINGS_KEY, JSON.stringify(settingsToSave));
-    } catch (error) {
-      console.error("Failed to save settings to localStorage", error);
-    }
-  }, []);
+  const {
+    spreadsheetId,
+    clientId,
+    clientSecret,
+    geminiApiKey, // Include if you want to manage it here
+    updateSpreadsheetId,
+    updateClientId,
+    updateClientSecret,
+    updateGeminiApiKey, // Include if needed
+    isSettingsLoaded,
+  } = useSettings();
 
   const handleSettingChange = (event) => {
     const { name, value } = event.target;
-    setSettings(prevSettings => {
-      const newSettings = {
-        ...prevSettings,
-        [name]: value,
-      };
-      saveSettings({ [name]: value });
-      return newSettings;
-    });
+    switch (name) {
+      case 'spreadsheetId':
+        updateSpreadsheetId(value);
+        break;
+      case 'clientId':
+        updateClientId(value);
+        break;
+      case 'clientSecret':
+        updateClientSecret(value);
+        break;
+      case 'geminiApiKey': // Add case if managing Gemini key here
+         updateGeminiApiKey(value);
+         break;
+      default:
+        console.warn(`Unknown setting field: ${name}`);
+    }
+  };
+
+  if (!isSettingsLoaded) {
+      return (
+          <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', background: `linear-gradient(160deg, ${colors.backgroundGradientStart}, ${colors.backgroundGradientEnd})` }}>
+              <CircularProgress sx={{ color: colors.primary }}/>
+          </Box>
+      );
+  }
+
+  // Common TextField Styles
+  const textFieldStyles = {
+       InputLabelProps: { style: { color: colors.text } },
+       InputProps: {
+         style: { color: colors.text },
+         sx: {
+           '& .MuiOutlinedInput-notchedOutline': { borderColor: 'rgba(255, 255, 255, 0.5)' },
+           '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: 'rgba(255, 255, 255, 0.8)' },
+           '&.Mui-focused .MuiOutlinedInput-notchedOutline': { borderColor: colors.secondary },
+           backgroundColor: 'rgba(0, 0, 0, 0.1)', // Slightly darker background for fields
+           borderRadius: 1,
+         },
+       },
+       sx: { mb: 2 },
+       fullWidth: true,
+       variant: "outlined",
+       margin: "normal",
   };
 
   return (
@@ -102,79 +103,59 @@ const SettingsScreen = () => {
         component="main"
         sx={{
           flexGrow: 1,
-          padding: 3,
+          padding: { xs: 2, sm: 3 },
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
         }}
       >
-        <Paper sx={{ p: 3, width: '100%', maxWidth: '500px', background: 'rgba(255, 255, 255, 0.1)', borderRadius: 2 }}>
-          <Typography variant="h5" gutterBottom sx={{ color: colors.text, mb: 3 }}>
-            Google Sheet API
+        <Paper sx={{ p: { xs: 2, sm: 3 }, width: '100%', maxWidth: '600px', background: 'rgba(255, 255, 255, 0.08)', borderRadius: 2, boxShadow: '0 4px 15px rgba(0,0,0,0.2)' }}>
+          <Typography variant="h5" gutterBottom sx={{ color: colors.text, mb: 3, textAlign: 'center' }}>
+            Google API Settings
           </Typography>
+
           <TextField
             label="Spreadsheet ID"
-            variant="outlined"
             name="spreadsheetId"
-            value={settings.spreadsheetId}
+            value={spreadsheetId || ''}
             onChange={handleSettingChange}
-            fullWidth
-            margin="normal"
-            InputLabelProps={{
-              style: { color: colors.text },
-            }}
-            InputProps={{
-              style: { color: colors.text },
-              sx: {
-                '& .MuiOutlinedInput-notchedOutline': {
-                  borderColor: 'rgba(255, 255, 255, 0.5)',
-                },
-                '&:hover .MuiOutlinedInput-notchedOutline': {
-                  borderColor: 'rgba(255, 255, 255, 0.8)',
-                },
-                '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
-                  borderColor: colors.secondary,
-                },
-              },
-            }}
-            sx={{ mb: 2 }}
+            {...textFieldStyles}
           />
           <TextField
             label="Google Client ID"
-            variant="outlined"
             name="clientId"
-            value={settings.clientId}
+            value={clientId || ''}
             onChange={handleSettingChange}
-            fullWidth
-            margin="normal"
-            InputLabelProps={{
-              style: { color: colors.text },
-            }}
-            InputProps={{
-              style: { color: colors.text },
-              sx: {
-                '& .MuiOutlinedInput-notchedOutline': {
-                  borderColor: 'rgba(255, 255, 255, 0.5)',
-                },
-                '&:hover .MuiOutlinedInput-notchedOutline': {
-                  borderColor: 'rgba(255, 255, 255, 0.8)',
-                },
-                '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
-                  borderColor: colors.secondary,
-                },
-              },
-            }}
+            {...textFieldStyles}
           />
-          {/* Auto-save notification text */}
+          <TextField
+            label="Google Client Secret"
+            name="clientSecret"
+            type="password"
+            value={clientSecret || ''}
+            onChange={handleSettingChange}
+            {...textFieldStyles}
+            sx={{ mb: 0 }} // Remove bottom margin for the last field before caption
+          />
+
+          {/* Uncomment to manage Gemini Key here
+          <Typography variant="h5" gutterBottom sx={{ color: colors.text, mb: 1, mt: 4, textAlign: 'center' }}>
+            Gemini API Key
+          </Typography>
+          <TextField
+            label="Gemini API Key"
+            name="geminiApiKey"
+            type="password"
+            value={geminiApiKey || ''}
+            onChange={handleSettingChange}
+            {...textFieldStyles}
+            sx={{ mb: 0 }}
+          />
+          */}
+
           <Typography
             variant="caption"
-            sx={{
-              display: 'block', // Make it block to appear on its own line
-              mt: 2,            // Add some margin top
-              color: 'rgba(255, 255, 255, 0.7)', // Slightly lighter text color
-              fontStyle: 'italic',
-              textAlign: 'center' // Center align the text
-            }}
+            sx={{ display: 'block', mt: 2, color: 'rgba(255, 255, 255, 0.7)', fontStyle: 'italic', textAlign: 'center' }}
           >
             Changes are saved automatically.
           </Typography>
@@ -185,21 +166,3 @@ const SettingsScreen = () => {
 };
 
 export default SettingsScreen;
-
-export const getStoredSettings = () => {
-  const stored = localStorage.getItem(SETTINGS_KEY);
-  let relevantSettings = {
-    spreadsheetId: '',
-    clientId: '',
-  };
-  if (stored) {
-    try {
-      const parsed = JSON.parse(stored);
-      relevantSettings.spreadsheetId = parsed.spreadsheetId || '';
-      relevantSettings.clientId = parsed.clientId || '';
-    } catch {
-        // Keep defaults if parsing fails
-    }
-  }
-  return relevantSettings;
-};

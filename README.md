@@ -72,6 +72,8 @@ npm install gapi-script
 npm install @mui/material @emotion/react @emotion/styled @mui/icons-material react-swipeable framer-motion
 
 
+npm install react-swipeable date-fns
+
 
 
 

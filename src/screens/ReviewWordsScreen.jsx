@@ -1,277 +1,318 @@
-import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Box from '@mui/material/Box';
-import AppBar from '@mui/material/AppBar';
-import Toolbar from '@mui/material/Toolbar';
-import IconButton from '@mui/material/IconButton';
-import Typography from '@mui/material/Typography';
-import ArrowBackIcon from '@mui/icons-material/ArrowBack';
-import Button from '@mui/material/Button';
 import CircularProgress from '@mui/material/CircularProgress';
 import Alert from '@mui/material/Alert';
-import Stack from '@mui/material/Stack';
-import { useSwipeable } from 'react-swipeable';
-import { AnimatePresence } from 'framer-motion';
+import Button from '@mui/material/Button'; // For Sign in if needed inline
+import GoogleIcon from '@mui/icons-material/Google'; // For Sign in button
+import { format, parseISO, isToday } from 'date-fns'; // Date functions
+import { useSwipeable } from 'react-swipeable'; // Swipe hook
 
+import { useGoogleSheetApi } from '../Api/GoogleSheetApi'; // Adjust path
+import { useSettings } from '../context/SettingsContext'; // If needed for settings like display mode
+import { colors } from '../styles/colors'; // Adjust path
+
+import ReviewHeader from '../components/ReviewHeader';
 import Flashcard from '../components/Flashcard';
 import ReviewControls from '../components/ReviewControls';
-import { useGoogleSheetApi } from '../Api/GoogleSheetApi';
-import { getTodayDateString, shuffleArray } from '../utils/helpers';
-import { colors } from '../styles/colors';
+import ReviewModePrompt from '../components/ReviewModePrompt';
 
-const COL_INDEX = { WORD: 0, MEANING: 1, PART_OF_SPEECH: 2, PHONETIC_FARSI: 3, ETYMOLOGY: 4, EXAMPLES_JSON: 5, MNEMONICS_JSON: 6, VISUAL_MNEMONIC: 7, COLLOCATIONS_CSV: 8, COMMON_MISTAKES_CSV: 9, FORMALITY_LEVEL: 10, CULTURAL_NOTES: 11, GESTURE_ASSOCIATION: 12, EMOTIONAL_CONNOTATION: 13, GRAMMAR_NOTES: 14, WORD_FAMILY_CSV: 15, MEMORY_STRENGTH: 16, SPACED_REPETITION_DATES_CSV: 17, DIFFICULTY_LEVEL: 18, CATEGORY: 19, SYNONYMS_CSV: 20, ANTONYMS_CSV: 21, USAGE_FREQUENCY: 22, RELATED_WORDS_CSV: 23, SOURCE: 24, NOTES: 25, EXAMPLE_AUDIO_URL: 26, IS_DELETED: 27, CORRECT_REVIEWS: 28, WRONG_REVIEWS: 29 };
-const DATA_RANGE = `Sheet1!A2`;
-const parseCsvString = (csvString) => { if (!csvString || typeof csvString !== 'string') return []; return csvString.split(',').map(s => s.trim()).filter(Boolean); };
-const parseJsonString = (jsonString, defaultValue = []) => { if (!jsonString || typeof jsonString !== 'string') return defaultValue; try { const parsed = JSON.parse(jsonString); return Array.isArray(parsed) ? parsed : defaultValue; } catch (e) { console.error(`[Transform] Error parsing JSON string: "${jsonString}"`, e); return defaultValue; } };
-const transformSheetRowToObject = (rowArray, rowIndex) => { const maxIndex = Math.max(...Object.values(COL_INDEX)); if (!rowArray || rowArray.length <= maxIndex) { console.warn(`[T] Skip row ${rowIndex + 2}: insufficient cols`); return null; } const getVal = (index, defaultValue = '') => String(rowArray[index] || defaultValue); const getNum = (index, defaultValue = 0) => { const val = parseInt(rowArray[index], 10); return Number.isNaN(val) ? defaultValue : val; }; const wordData = { _originalRowIndex: rowIndex + 2, word: getVal(COL_INDEX.WORD), meaning: getVal(COL_INDEX.MEANING), part_of_speech: getVal(COL_INDEX.PART_OF_SPEECH), phonetic_farsi: getVal(COL_INDEX.PHONETIC_FARSI), etymology: getVal(COL_INDEX.ETYMOLOGY), examples: parseJsonString(rowArray[COL_INDEX.EXAMPLES_JSON]), mnemonics: parseJsonString(rowArray[COL_INDEX.MNEMONICS_JSON]), visual_mnemonic: getVal(COL_INDEX.VISUAL_MNEMONIC), collocations: parseCsvString(rowArray[COL_INDEX.COLLOCATIONS_CSV]), common_mistakes: parseCsvString(rowArray[COL_INDEX.COMMON_MISTAKES_CSV]), formality_level: getVal(COL_INDEX.FORMALITY_LEVEL), cultural_notes: getVal(COL_INDEX.CULTURAL_NOTES), gesture_association: getVal(COL_INDEX.GESTURE_ASSOCIATION), emotional_connotation: getVal(COL_INDEX.EMOTIONAL_CONNOTATION), grammar_notes: getVal(COL_INDEX.GRAMMAR_NOTES), word_family: parseCsvString(rowArray[COL_INDEX.WORD_FAMILY_CSV]), variants: [], memory_strength: getNum(COL_INDEX.MEMORY_STRENGTH, 75), spaced_repetition_dates: parseCsvString(rowArray[COL_INDEX.SPACED_REPETITION_DATES_CSV]).filter(date => /^\d{4}-\d{2}-\d{2}$/.test(date)), difficulty_level: getVal(COL_INDEX.DIFFICULTY_LEVEL), category: getVal(COL_INDEX.CATEGORY), synonyms: parseCsvString(rowArray[COL_INDEX.SYNONYMS_CSV]), antonyms: parseCsvString(rowArray[COL_INDEX.ANTONYMS_CSV]), usage_frequency: getVal(COL_INDEX.USAGE_FREQUENCY), related_words: parseCsvString(rowArray[COL_INDEX.RELATED_WORDS_CSV]), source: getVal(COL_INDEX.SOURCE), notes: getVal(COL_INDEX.NOTES), example_audio_url: getVal(COL_INDEX.EXAMPLE_AUDIO_URL), is_deleted: getVal(COL_INDEX.IS_DELETED).toUpperCase() === 'TRUE', correct_reviews: getNum(COL_INDEX.CORRECT_REVIEWS), wrong_reviews: getNum(COL_INDEX.WRONG_REVIEWS), last_reviewed: getVal(COL_INDEX.LAST_REVIEWED), }; if (!wordData.word) { console.warn(`[T] Skip row ${rowIndex + 2}: empty word`); return null; } return wordData; };
+// Fisher-Yates Shuffle Algorithm
+const shuffleArray = (array) => {
+    let currentIndex = array.length, randomIndex;
+    while (currentIndex !== 0) {
+        randomIndex = Math.floor(Math.random() * currentIndex);
+        currentIndex--;
+        [array[currentIndex], array[randomIndex]] = [array[randomIndex], array[currentIndex]];
+    }
+    return array;
+};
 
+// Function to get today's date in YYYY-MM-DD format
+const getTodayDateString = () => format(new Date(), 'yyyy-MM-dd');
 
-const WordsReviewScreen = ({
-    showEnglishFirst = true,
-    removeReviewedInstantly = false,
-}) => {
+const ReviewWordsScreen = () => {
     const navigate = useNavigate();
     const {
-        isGapiLoading, isGapiClientInitialized, isGisInitialized, isSignedIn,
-        error: apiError, handleSignIn, handleSignOut, getSheetData, updateSheetData,
+        isApiReady, isSignInReady, isGapiLoading, isSignedIn, error: apiError,
+        handleSignIn, handleSignOut, getAllWords, updateWord,
     } = useGoogleSheetApi();
+    // TODO: Get display mode setting from context if implemented
+    // const { reviewDisplayMode } = useSettings(); // Example
+    const reviewDisplayMode = 'word'; // Hardcoded for now, get from settings later
 
-    const [allWords, setAllWords] = useState([]);
-    const [reviewWords, setReviewWords] = useState([]);
+    const [allWords, setAllWords] = useState([]); // Store all fetched words
+    const [reviewList, setReviewList] = useState([]); // Current list being reviewed
     const [currentIndex, setCurrentIndex] = useState(0);
-    const [isRevealed, setIsRevealed] = useState(false);
-    const [isLoadingData, setIsLoadingData] = useState(false);
-    const [componentError, setComponentError] = useState(null);
-    const [reviewPhase, setReviewPhase] = useState('loading');
+    const [isLoading, setIsLoading] = useState(false); // Combined loading state
+    const [error, setError] = useState(null); // Combined error state
+    const [reviewPhase, setReviewPhase] = useState('loading'); // loading, daily, finished_daily, all, finished_all
+    const [showDetails, setShowDetails] = useState(false); // Card flip state
 
-    const audioRef = useRef(null);
-    const isApiFullyReady = !isGapiLoading && isGapiClientInitialized && isGisInitialized;
+    const todayString = useMemo(() => getTodayDateString(), []);
 
-    useEffect(() => {
-        console.log(`[WRS State]: Phase=${reviewPhase}, APIReady=${isApiFullyReady}, SignedIn=${isSignedIn}, LoadingData=${isLoadingData}, review#=${reviewWords.length}, idx=${currentIndex}`);
-    }, [reviewPhase, isApiFullyReady, isSignedIn, isLoadingData, reviewWords.length, currentIndex]);
-
-
+    // --- Data Fetching and Preparation ---
     const prepareReviewLists = useCallback((words) => {
-        console.log("[WRS Prep]: Starting preparation for 'main' phase...");
-        const today = getTodayDateString();
-        const nonDeletedWords = words.filter(word => !word.is_deleted);
-        console.log(`[WRS Prep]: Found ${nonDeletedWords.length} non-deleted words.`);
+        console.log('[ReviewScreen] Preparing review lists...');
+        setAllWords(words); // Store all words
 
-        const todaysWords = nonDeletedWords.filter(word => Array.isArray(word.spaced_repetition_dates) && word.spaced_repetition_dates.includes(today));
-        const shuffledTodaysWords = shuffleArray(todaysWords);
-        console.log(`[WRS Prep]: Group 1 (Today) - ${shuffledTodaysWords.length} words (shuffled).`);
+        // Daily Review List
+        const dailyList = words.filter(word =>
+            word && Array.isArray(word.spaced_repetition_dates) && word.spaced_repetition_dates.includes(todayString)
+        );
+        console.log(`[ReviewScreen] Found ${dailyList.length} words for today.`);
 
-        const todaysWordIds = new Set(shuffledTodaysWords.map(w => w._originalRowIndex));
-        const notTodaysWords = nonDeletedWords.filter(word => !todaysWordIds.has(word._originalRowIndex));
-        const sortedHardestNotToday = [...notTodaysWords].sort((a, b) => { if (a.wrong_reviews !== b.wrong_reviews) return b.wrong_reviews - a.wrong_reviews; return a.correct_reviews - b.correct_reviews; });
-        const shuffledHardestNotTodaysWords = shuffleArray(sortedHardestNotToday);
-        console.log(`[WRS Prep]: Group 2 (Hardest Not Today) - ${shuffledHardestNotTodaysWords.length} words (sorted then shuffled).`);
-
-        const initialReviewList = [...shuffledTodaysWords, ...shuffledHardestNotTodaysWords];
-        setReviewWords(initialReviewList);
-        console.log(`[WRS Prep]: Initial review list created with ${initialReviewList.length} words.`);
-
-        setCurrentIndex(0);
-        setIsRevealed(false);
-        if (initialReviewList.length > 0) {
-            console.log("[WRS Prep]: Setting phase to 'main'.");
-            setReviewPhase('main');
+        if (dailyList.length > 0) {
+            setReviewList(shuffleArray([...dailyList])); // Shuffle a copy
+            setCurrentIndex(0);
+            setShowDetails(false);
+            setReviewPhase('daily');
         } else {
-            console.log("[WRS Prep]: Initial list empty, setting phase to 'finished_all'.");
-            setReviewPhase('finished_all');
+            // No words for today, maybe prompt for 'all' immediately?
+             console.log('[ReviewScreen] No words scheduled for today.');
+             setReviewList([]);
+             setCurrentIndex(0);
+             setShowDetails(false);
+             setReviewPhase('finished_daily'); // Go directly to prompt
         }
+        setError(null); // Clear previous errors on successful prep
+    }, [todayString]);
 
-    }, []);
+    const fetchData = useCallback(async () => {
+         if (!isApiReady || !isSignedIn) return;
+         console.log(`[ReviewScreen] Starting initial data fetch...`);
+         setIsLoading(true); setError(null); setReviewPhase('loading');
+         try {
+           const fetchedWords = await getAllWords();
+           prepareReviewLists(fetchedWords || []);
+         } catch (err) {
+           console.error('[ReviewScreen] Error fetching words:', err);
+           setError(apiError || err.message || 'Failed to fetch words.');
+           setReviewPhase('error'); // Set error phase
+         } finally {
+           setIsLoading(false);
+         }
+      }, [getAllWords, isApiReady, isSignedIn, prepareReviewLists, apiError]); // Added apiError
 
-
+    // Initial data fetch on mount or when sign-in/API ready status changes
     useEffect(() => {
-        const fetchData = async () => {
-            if (isApiFullyReady && isSignedIn && reviewPhase === 'loading' && !isLoadingData) {
-                console.log("[WRS Fetch]: Fetching...");
-                setIsLoadingData(true); setComponentError(null); setAllWords([]);
-                try {
-                    const sheetValues = await getSheetData(DATA_RANGE);
-                    if (sheetValues?.length > 0) {
-                        console.log(`[WRS Fetch]: Fetched ${sheetValues.length} rows. Transforming...`);
-                        const transformed = sheetValues.map(transformSheetRowToObject).filter(w => w !== null);
-                        console.log(`[WRS Fetch]: Transformed ${transformed.length}. Setting allWords state.`);
-                        console.log("[WRS Fetch]: allWords content (first 2):", transformed.slice(0, 2));
-                        setAllWords(transformed);
-                        prepareReviewLists(transformed);
-                    } else {
-                        console.log("[WRS Fetch]: No data in sheet.");
-                        setAllWords([]); prepareReviewLists([]); setReviewPhase('finished_all');
-                    }
-                } catch (fetchError) {
-                    console.error("[WRS Fetch]: Error:", fetchError);
-                    setComponentError(`Load failed: ${fetchError.message}`); setAllWords([]); prepareReviewLists([]); setReviewPhase('error');
-                } finally { setIsLoadingData(false); console.log("[WRS Fetch]: Finished."); }
-            } else if (!isSignedIn && isApiFullyReady && reviewPhase !== 'loading') {
-                 console.log("[WRS Fetch]: Signed out, resetting."); setAllWords([]); setReviewWords([]); setReviewPhase('loading');
-            } else if (!isLoadingData && reviewPhase === 'loading' && isApiFullyReady && isSignedIn) {
-                 console.log("[WRS Fetch]: API ready and signed in, but phase still loading. Triggering fetch check (should be handled by deps).");
-            }
-        };
-        if (reviewPhase === 'loading') fetchData();
-    }, [isApiFullyReady, isSignedIn, getSheetData, prepareReviewLists, reviewPhase, isLoadingData]);
-
-
-    const currentWordData = useMemo(() => {
-        console.log(`[WRS Memo]: Calculating currentWordData. Phase=${reviewPhase}, Idx=${currentIndex}, reviewWords length=${reviewWords.length}`);
-        if (reviewPhase === 'prompt_finished_main' || reviewPhase === 'finished_all' || reviewWords.length === 0 || currentIndex >= reviewWords.length) {
-             console.log("[WRS Memo]: Returning null."); return null;
-        }
-        const word = reviewWords[currentIndex];
-        console.log("[WRS Memo]: Returning word:", word?.word);
-        return word;
-    }, [reviewWords, currentIndex, reviewPhase]);
-
-
-    const handleNavigate = useCallback((direction) => {
-        if (reviewWords.length === 0 || reviewPhase === 'prompt_finished_main' || reviewPhase === 'finished_all') return;
-        setIsRevealed(false);
-        const currentListLength = reviewWords.length; const newIndex = currentIndex + direction;
-        if (newIndex >= 0 && newIndex < currentListLength) setCurrentIndex(newIndex);
-        else if (newIndex >= currentListLength) {
-            console.log(`[WRS Nav]: End of '${reviewPhase}'`);
-            if (reviewPhase === 'main') setReviewPhase('prompt_finished_main');
-            else if (reviewPhase === 'all') setReviewPhase('finished_all');
+        console.log(`[ReviewScreen] Mount/State Check: ApiReady=${isApiReady}, SignedIn=${isSignedIn}`);
+        if (isApiReady && isSignedIn) {
+             // Only fetch if we don't have words yet OR if reviewList is empty (e.g., after sign-in)
+             if(allWords.length === 0) {
+                fetchData();
+             } else if (reviewList.length === 0 && reviewPhase !== 'finished_daily' && reviewPhase !== 'all' && reviewPhase !== 'finished_all') {
+                 // If API became ready after mount and we have allWords, but no review list yet
+                 console.log("[ReviewScreen] API ready, preparing lists from existing data.");
+                 prepareReviewLists(allWords);
+             }
         } else {
-             if (reviewPhase === 'prompt_finished_main') setReviewPhase('main');
-             if (reviewPhase === 'finished_all' && allWords.length > 0) setReviewPhase('all');
-             setCurrentIndex(currentListLength - 1);
+            // Clear state if user signs out or API becomes not ready
+            setAllWords([]);
+            setReviewList([]);
+            setCurrentIndex(0);
+            setReviewPhase('loading'); // Or based on signedIn status
+            setError(null);
         }
-    }, [currentIndex, reviewWords.length, reviewPhase, allWords.length]);
+    }, [isApiReady, isSignedIn, fetchData, prepareReviewLists, allWords, reviewList.length, reviewPhase]); // Dependencies to trigger fetch/prep
+
+
+    // --- Navigation and Actions ---
+    const goToNextCard = useCallback(() => {
+        if (currentIndex < reviewList.length - 1) {
+            setCurrentIndex(prev => prev + 1);
+            setShowDetails(false); // Hide details on nav
+        } else {
+            // Reached end of current list
+            if (reviewPhase === 'daily') {
+                setReviewPhase('finished_daily');
+            } else if (reviewPhase === 'all') {
+                setReviewPhase('finished_all');
+            }
+        }
+    }, [currentIndex, reviewList.length, reviewPhase]);
+
+    const goToPrevCard = useCallback(() => {
+        if (currentIndex > 0) {
+            setCurrentIndex(prev => prev - 1);
+            setShowDetails(false); // Hide details on nav
+        }
+    }, [currentIndex]);
 
     const handleReviewAction = useCallback(async (isCorrect) => {
-        if (!currentWordData) return;
-        setComponentError(null);
-        const { _originalRowIndex, word: wordId, correct_reviews, wrong_reviews } = currentWordData;
-        const currentListLength = reviewWords.length; const currentReviewIndex = currentIndex;
-        if (!_originalRowIndex) { setComponentError("Internal error: Missing row index."); return; }
+        if (reviewList.length === 0 || currentIndex >= reviewList.length) return;
 
-        const newCorrectReviews = correct_reviews + (isCorrect ? 1 : 0);
-        const newWrongReviews = wrong_reviews + (isCorrect ? 0 : 1);
-        const today = getTodayDateString();
+        const currentWord = reviewList[currentIndex];
+        if (!currentWord) return;
 
-        const updatedRowData = [...Array(Math.max(...Object.values(COL_INDEX)) + 1)];
-        Object.keys(COL_INDEX).forEach(key => {
-            const index = COL_INDEX[key]; let valueToSet;
-            switch(key) {
-                case 'CORRECT_REVIEWS': valueToSet = newCorrectReviews; break;
-                case 'WRONG_REVIEWS': valueToSet = newWrongReviews; break;
-                case 'LAST_REVIEWED': valueToSet = today; break;
-                case 'EXAMPLES_JSON': valueToSet = JSON.stringify(currentWordData.examples || []); break;
-                case 'MNEMONICS_JSON': valueToSet = JSON.stringify(currentWordData.mnemonics || []); break;
-                case 'IS_DELETED': valueToSet = currentWordData.is_deleted ? 'TRUE' : 'FALSE'; break;
-                case 'SPACED_REPETITION_DATES_CSV': valueToSet = (currentWordData.spaced_repetition_dates || []).join(','); break;
-                default: const dataKey = key.toLowerCase().replace(/_csv$|_json$/, ''); if (currentWordData[dataKey] !== undefined) { if (Array.isArray(currentWordData[dataKey]) && (key.endsWith('_CSV') || key.endsWith('_JSON'))) { valueToSet = currentWordData[dataKey].join(','); } else { valueToSet = currentWordData[dataKey]; } } else { valueToSet = ''; }
-            }
-            updatedRowData[index] = valueToSet;
+        console.log(`[ReviewScreen] handleReviewAction for "${currentWord.word}", Correct: ${isCorrect}`);
+        setError(null); // Clear previous action errors
+
+        // Optimistic UI update (optional but good for UX)
+        // You could remove the item from a temporary display list immediately
+
+        // Prepare updated data
+        const updatedWord = {
+            ...currentWord,
+            correct_reviews: (currentWord.correct_reviews || 0) + (isCorrect ? 1 : 0),
+            wrong_reviews: (currentWord.wrong_reviews || 0) + (!isCorrect ? 1 : 0),
+            last_reviewed: format(new Date(), 'yyyy-MM-dd HH:mm:ss'), // Add timestamp
+            // Remove today's date from spaced repetition list
+            spaced_repetition_dates: (currentWord.spaced_repetition_dates || []).filter(date => date !== todayString),
+        };
+
+        try {
+            await updateWord(currentWord.word, updatedWord);
+            console.log(`[ReviewScreen] Update successful for "${currentWord.word}"`);
+             // Update the word in the main 'allWords' list as well
+             setAllWords(prev => prev.map(w => w.word === currentWord.word ? updatedWord : w));
+             // Update reviewList (optional, could just navigate)
+            // setReviewList(prev => prev.map(w => w.word === currentWord.word ? updatedWord : w));
+
+            goToNextCard();
+        } catch (err) {
+            console.error(`[ReviewScreen] Failed to update word "${currentWord.word}"`, err);
+            setError(apiError || err.message || `Failed to save review for "${currentWord.word}".`);
+            // Note: No rollback implemented for optimistic UI update here
+        }
+
+    }, [reviewList, currentIndex, updateWord, todayString, goToNextCard, apiError, setAllWords]);
+
+
+    const handleStartReviewAll = useCallback(() => {
+        console.log('[ReviewScreen] Starting review of all words.');
+        setError(null);
+        if (allWords.length === 0) {
+            setError("No words available to review.");
+            setReviewPhase('error');
+            return;
+        }
+
+        // Sort and Shuffle "All Words"
+        const sortedWords = [...allWords].sort((a, b) => {
+            // Priority 1: Higher wrong_reviews first
+            if ((b.wrong_reviews || 0) > (a.wrong_reviews || 0)) return 1;
+            if ((b.wrong_reviews || 0) < (a.wrong_reviews || 0)) return -1;
+            // Priority 2: Lower correct_reviews first
+            if ((a.correct_reviews || 0) < (b.correct_reviews || 0)) return -1;
+            if ((a.correct_reviews || 0) > (b.correct_reviews || 0)) return 1;
+            // Priority 3: Less recently reviewed (or never) first (optional)
+            // const dateA = a.last_reviewed ? parseISO(a.last_reviewed) : new Date(0);
+            // const dateB = b.last_reviewed ? parseISO(b.last_reviewed) : new Date(0);
+            // if (dateA < dateB) return -1;
+            // if (dateA > dateB) return 1;
+            return 0; // Keep original order if all else equal before shuffle
         });
 
-        console.log(`[WRS Action]: Updating row ${_originalRowIndex}...`);
-        try {
-            const rangeToUpdate = `Sheet1!A${_originalRowIndex}:${String.fromCharCode(65 + Math.max(...Object.values(COL_INDEX)))}${_originalRowIndex}`;
-            await updateSheetData(rangeToUpdate, [updatedRowData]);
-            console.log(`[WRS Action]: Sheet update success.`);
+        setReviewList(shuffleArray(sortedWords));
+        setCurrentIndex(0);
+        setShowDetails(false);
+        setReviewPhase('all');
 
-             const updatedWord = { ...currentWordData, correct_reviews: newCorrectReviews, wrong_reviews: newWrongReviews, last_reviewed: today };
-             setReviewWords(prev => prev.map((word, index) => index === currentReviewIndex ? updatedWord : word ));
-
-             const isLastCardInCurrentList = currentReviewIndex >= currentListLength - 1;
-             if (isLastCardInCurrentList) {
-                 if (reviewPhase === 'main') setReviewPhase('prompt_finished_main');
-                 else if (reviewPhase === 'all') setReviewPhase('finished_all');
-             } else handleNavigate(1);
-        } catch (updateError) {
-            console.error(`[WRS Action]: Update fail:`, updateError);
-            setComponentError(`Save failed: ${updateError.message}`);
-        }
-    }, [currentWordData, currentIndex, updateSheetData, handleNavigate, removeReviewedInstantly, reviewWords, reviewPhase]);
-
-
-    const handleCardClick = () => { setIsRevealed(prev => !prev); };
-    const handlePlayAudio = useCallback((audioUrl) => { if (audioRef.current) audioRef.current.pause(); audioRef.current = new Audio(audioUrl); audioRef.current.play().catch(e => console.error("Audio error:", e)); }, []);
-    const handleEditWord = useCallback((wordToEdit) => { console.log("Edit requested:", wordToEdit); alert(`Editing "${wordToEdit.word}" not implemented.`); }, []);
-
-    const startReviewAll = useCallback(() => {
-        console.log("[WRS Action]: Start Review All clicked.");
-        console.log("[WRS startReviewAll]: Current allWords count:", allWords.length);
-        if (allWords.length === 0) { console.error("[WRS startReviewAll]: 'allWords' state is empty!"); setComponentError("Cannot start 'Review All': word list empty."); setReviewPhase('error'); return; }
-        const nonDeleted = allWords.filter(w => !w.is_deleted);
-        console.log("[WRS startReviewAll]: Non-deleted count:", nonDeleted.length);
-        if (nonDeleted.length > 0) {
-            const shuffledList = shuffleArray(nonDeleted);
-            console.log("[WRS startReviewAll]: Shuffled list generated (first 2):", shuffledList.slice(0, 2).map(w=>w.word));
-            console.log("[WRS startReviewAll]: Setting states for phase='all'.");
-            setReviewWords(shuffledList); setCurrentIndex(0); setIsRevealed(false); setReviewPhase('all');
-        } else { console.log("[WRS startReviewAll]: No non-deleted words found."); setReviewPhase('finished_all'); }
     }, [allWords]);
 
-    const skipFurtherReview = useCallback(() => { console.log("[WRS Action]: Skip Further Review clicked."); setReviewPhase('finished_all'); }, []);
-
-    const swipeHandlers = useSwipeable({ onSwipedLeft: () => (reviewPhase !== 'prompt_finished_main' && reviewPhase !== 'finished_all') && handleNavigate(1), onSwipedRight: () => (reviewPhase !== 'prompt_finished_main' && reviewPhase !== 'finished_all') && handleNavigate(-1), preventScrollOnSwipe: true, trackMouse: true });
-    const screenBackgroundColor = '#5D5FEF';
-
-    const renderContent = () => {
-        console.log("[WRS renderContent]: Evaluating UI state...");
-        if (reviewPhase === 'loading' || isLoadingData) return <CircularProgress sx={{ color: '#FFFFFF', margin: 'auto' }} />;
-        if (apiError) return <Alert severity="error" sx={{ m: 2 }}>API Error: {apiError}</Alert>;
-        if (componentError) return <Alert severity="warning" sx={{ m: 2 }}>{componentError}</Alert>;
-        if (!isApiFullyReady) return <Typography sx={{ margin: 'auto' }}>Initializing API...</Typography>;
-
-        if (!isSignedIn) return ( <Box sx={{ textAlign: 'center', margin: 'auto' }}> <Typography sx={{ mb: 2 }}>Please sign in.</Typography> <Button variant="contained" onClick={handleSignIn}>Sign In with Google</Button> </Box> );
-
-        if (reviewPhase === 'prompt_finished_main') {
-             console.log("[WRS renderContent]: Showing 'prompt_finished_main' UI.");
-             return ( <Box sx={{ textAlign: 'center', margin: 'auto', p: 3, borderRadius: 2, background: 'rgba(0,0,0,0.1)' }}> <Typography variant="h5" sx={{ mb: 3 }}>Main review finished!</Typography> <Typography sx={{ mb: 4 }}>What next?</Typography> <Stack direction="column" spacing={2.5} alignItems="center"> <Button variant="contained" color="primary" onClick={startReviewAll} sx={{ width: '100%', maxWidth: '320px', py: 1.5 }}> Review All Words </Button> <Button variant="outlined" color="inherit" onClick={skipFurtherReview} sx={{ width: '100%', maxWidth: '320px', py: 1 }}> Finish Session </Button> </Stack> </Box> );
-        }
-
-        if (reviewPhase === 'finished_all') {
-             console.log("[WRS renderContent]: Showing 'finished_all' UI.");
-             return ( <Box sx={{ textAlign: 'center', margin: 'auto' }}> <Typography variant="h5" sx={{ mb: 3 }}>All words reviewed!</Typography> <Stack direction="row" spacing={2} justifyContent="center"> <Button variant="outlined" color="inherit" onClick={() => prepareReviewLists(allWords)} sx={{mr: 1}}> Restart Main Review </Button> <Button variant="outlined" color="inherit" onClick={startReviewAll}> Review All Words </Button> </Stack> </Box> );
-        }
-
-        if (reviewWords.length === 0) {
-            console.log(`[WRS renderContent]: Review list empty for phase '${reviewPhase}'.`);
-            return <Typography sx={{ margin: 'auto' }}>No words for this phase.</Typography>;
-        }
-
-        console.log(`[WRS renderContent]: Phase '${reviewPhase}', index ${currentIndex}. Word: ${currentWordData?.word}`);
-        if (!currentWordData) {
-             console.error(`[WRS renderContent]: currentWordData is null/undefined. Phase=${reviewPhase}, Idx=${currentIndex}, List Length=${reviewWords.length}`);
-             return <Typography sx={{margin: 'auto'}}>Error loading card data...</Typography>;
-        }
-
-        return (
-            <>
-                <AnimatePresence mode="wait">
-                    <Box key={`${currentWordData._originalRowIndex}-${currentIndex}`} sx={{ width: '100%', display: 'flex', justifyContent: 'center' }}>
-                        <Flashcard wordData={currentWordData} isRevealed={isRevealed} showEnglishFirst={showEnglishFirst} onCardClick={handleCardClick} onPlayAudio={handlePlayAudio} onEditClick={handleEditWord} />
-                    </Box>
-                </AnimatePresence>
-                <ReviewControls onCorrect={() => handleReviewAction(true)} onIncorrect={() => handleReviewAction(false)} />
-            </>
-        );
+    const handleFinishReview = () => {
+        console.log('[ReviewScreen] Finishing review session.');
+        navigate('/'); // Navigate home or to another appropriate screen
     };
 
+     const handleFlipCard = () => {
+         setShowDetails(prev => !prev);
+     };
+
+     // Swipe handlers for Flashcard
+     const swipeHandlers = useSwipeable({
+         onSwipedLeft: () => { console.log("Swiped Left"); goToNextCard(); },
+         onSwipedRight: () => { console.log("Swiped Right"); goToPrevCard(); },
+         preventScrollOnSwipe: true,
+         trackMouse: true, // Allow mouse dragging like swipe
+     });
+
+    // --- Render Logic ---
+    const renderMainContent = () => {
+         if (reviewPhase === 'loading' || isLoading) return <CircularProgress sx={{ color: colors.primary, mt: 4, display: 'block', mx: 'auto' }} />;
+         if (reviewPhase === 'error') return <Alert severity="error" sx={{ mt: 2 }}>Error: {error || apiError || 'An unknown error occurred.'}</Alert>;
+         if (!isSignedIn) {
+             // Show Sign in prompt centrally if not signed in
+             return (
+                 <Box sx={{ textAlign: 'center', mt: '20vh' }}>
+                     <Typography sx={{ mb: 2, color: colors.textSecondary }}> Please sign in to review words. </Typography>
+                     <Button variant="contained" startIcon={<GoogleIcon />} onClick={handleSignIn} disabled={!isSignInReady} sx={{ backgroundColor: colors.primary, '&:hover': { backgroundColor: colors.primaryDark }}}>
+                         {isSignInReady ? 'Sign In with Google' : 'Initializing Sign In...'}
+                     </Button>
+                 </Box>
+             );
+         }
+
+         if (reviewPhase === 'finished_daily') {
+             return <ReviewModePrompt onReviewAll={handleStartReviewAll} onFinish={handleFinishReview} />;
+         }
+
+         if (reviewPhase === 'finished_all') {
+             return (
+                  <Paper sx={{ p: 3, mt: 4, textAlign: 'center', background: colors.cardBackground, color: colors.cardText }}>
+                     <Typography variant="h6">All words reviewed!</Typography>
+                     <Button variant="contained" onClick={handleFinishReview} sx={{ mt: 2 }}>Finish</Button>
+                 </Paper>
+             );
+         }
+
+         if (reviewList.length === 0 && (reviewPhase === 'daily' || reviewPhase === 'all')) {
+             return (
+                 <Typography sx={{ color: colors.textSecondary, mt: 3, textAlign: 'center' }}>
+                      No words available for the current review phase.
+                 </Typography>
+             );
+         }
+
+         const currentWordData = reviewList[currentIndex];
+         if (!currentWordData) {
+              console.warn("Current word data is undefined at index", currentIndex);
+              // Maybe end the review phase?
+              if (reviewPhase === 'daily') setReviewPhase('finished_daily');
+              else if (reviewPhase === 'all') setReviewPhase('finished_all');
+              return <Typography>End of list reached unexpectedly.</Typography>;
+         }
+
+         return (
+             <Box sx={{ display: 'flex', flexDirection: 'column', flexGrow: 1, justifyContent: 'space-between'}}>
+                 {/* Use Box for swipe handling */}
+                 <Box {...swipeHandlers} sx={{ flexGrow: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', p: 1 /* Add padding for card shadow etc */ }}>
+                     <Flashcard
+                         wordData={currentWordData}
+                         displayMode={reviewDisplayMode}
+                         onSwipeLeft={goToNextCard}
+                         onSwipeRight={goToPrevCard}
+                         onFlip={handleFlipCard}
+                         showDetails={showDetails}
+                     />
+                 </Box>
+                 {!showDetails && ( // Only show controls when details are hidden
+                     <ReviewControls
+                         onCorrect={() => handleReviewAction(true)}
+                         onIncorrect={() => handleReviewAction(false)}
+                     />
+                 )}
+             </Box>
+         );
+     };
+
     return (
-        <Box sx={{ minHeight: '100vh', backgroundColor: screenBackgroundColor, display: 'flex', flexDirection: 'column', color: '#FFFFFF' }} >
-            <AppBar position="static" sx={{ backgroundColor: 'transparent', boxShadow: 'none', color: '#FFFFFF' }} >
-                <Toolbar>
-                    <IconButton edge="start" color="inherit" aria-label="back" onClick={() => navigate(-1)} > <ArrowBackIcon /> </IconButton>
-                    <Typography variant="body1" component="div" sx={{ flexGrow: 1, textAlign: 'center' }}> Words Review {reviewPhase !== 'loading' && reviewPhase !== 'prompt_finished_main' && `(${reviewPhase})`} </Typography>
-                    {isSignedIn ? ( <Button color="inherit" size="small" onClick={handleSignOut}> Sign Out </Button> ) : ( <Box sx={{minWidth: 80}} /> )}
-                </Toolbar>
-                 {(reviewPhase === 'main' || reviewPhase === 'all') && reviewWords.length > 0 && ( <Typography variant="caption" sx={{ textAlign: 'center', pb: 1 }}> {currentIndex + 1} / {reviewWords.length} </Typography> )}
-            </AppBar>
-            <Box {...swipeHandlers} component="main" sx={{ flexGrow: 1, padding: '10px 20px 20px 20px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }} >
-                {renderContent()}
+        <Box sx={{ minHeight: '100vh', background: `linear-gradient(160deg, ${colors.backgroundGradientStart}, ${colors.backgroundGradientEnd})`, display: 'flex', flexDirection: 'column', }}>
+             <ReviewHeader
+                 title={reviewPhase === 'all' ? "Review All" : "Daily Review"}
+                 currentCardIndex={currentIndex}
+                 totalCards={reviewList.length}
+                 onRefresh={() => fetchData(true)} // Pass force=true for manual refresh
+                 onSignOut={handleSignOut}
+                 isSignedIn={isSignedIn}
+                 isLoading={isLoading}
+             />
+            <Box component="main" sx={{ flexGrow: 1, padding: { xs: 1, sm: 2 }, display: 'flex', flexDirection: 'column' }}>
+                {renderMainContent()}
             </Box>
         </Box>
     );
 };
 
-export default WordsReviewScreen;
+export default ReviewWordsScreen;

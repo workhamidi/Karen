@@ -10,7 +10,7 @@ import BookSearchIcon from '@mui/icons-material/Search'; // Use the correct icon
 import AddBoxIcon from '@mui/icons-material/AddBox';
 import VpnKeyIcon from '@mui/icons-material/VpnKey';
 
-import ActionButton from '../components/ActionButton';
+import ActionButton from './ActionButton';
 import { colors } from '../styles/colors';
 
 const MainScreen = () => {

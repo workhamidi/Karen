@@ -2,6 +2,12 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 
+// تنظیمات هدرهای امنیتی برای همه محیط‌ها
+const securityHeaders = {
+  'Cross-Origin-Opener-Policy': 'same-origin-allow-popups',
+  'Cross-Origin-Embedder-Policy': 'unsafe-none',
+}
+
 export default defineConfig({
   plugins: [
     react(),
@@ -36,20 +42,58 @@ export default defineConfig({
           },
         ],
       },
+      // تنظیمات هدرهای امنیتی برای سرویس ورکر
+      devOptions: {
+        enabled: true,
+        type: 'module',
+        navigateFallback: 'index.html',
+      },
+      workbox: {
+        // اضافه کردن هدرهای امنیتی به سرویس ورکر
+        runtimeCaching: [
+          {
+            urlPattern: /^https:\/\/accounts\.google\.com\//,
+            handler: 'NetworkFirst',
+            options: {
+              cacheName: 'google-auth',
+              expiration: {
+                maxEntries: 10,
+                maxAgeSeconds: 60 * 60 * 24, // یک روز
+              },
+              cacheableResponse: {
+                statuses: [0, 200],
+              },
+              // تنظیمات CORS برای دسترسی به API گوگل
+              fetchOptions: {
+                mode: 'cors',
+                credentials: 'include',
+              },
+            },
+          },
+        ],
+      },
     }),
   ],
   server: {
-    headers: {
-      // Keep COOP for Google Sign-In popup functionality
-      'Cross-Origin-Opener-Policy': 'same-origin-allow-popups',
-      // Change COEP to allow loading resources without CORP headers
-      'Cross-Origin-Embedder-Policy': 'unsafe-none', // <<<<< CHANGE HERE
-    }
+    headers: securityHeaders, // استفاده از هدرهای امنیتی برای محیط توسعه
   },
   preview: {
-     headers: {
-       'Cross-Origin-Opener-Policy': 'same-origin-allow-popups',
-       'Cross-Origin-Embedder-Policy': 'unsafe-none', // <<<<< CHANGE HERE TOO
-     }
-  }
+    headers: securityHeaders, // استفاده از هدرهای امنیتی برای محیط پیش‌نمایش
+  },
+  build: {
+    // تنظیمات بیلد برای محیط تولید
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          vendor: ['react', 'react-dom', 'react-router-dom'],
+          googleApi: ['gapi-script'],
+        },
+      },
+    },
+    // اطمینان از اینکه فایل‌های مربوط به احراز هویت گوگل به درستی بارگذاری می‌شوند
+    commonjsOptions: {
+      include: [/node_modules/],
+      extensions: ['.js', '.cjs'],
+    },
+  },
 })
