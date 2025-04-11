@@ -1,22 +1,26 @@
-export const getTodayDateString = () => {
-    const today = new Date();
-    const year = today.getFullYear();
-    const month = String(today.getMonth() + 1).padStart(2, '0'); // Months are 0-indexed
-    const day = String(today.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
+import { format } from 'date-fns';
+
+export const getTodayDateString = () => format(new Date(), 'yyyy-MM-dd');
+export const getCurrentTimestampString = () => format(new Date(), 'yyyy-MM-dd HH:mm:ss');
+
+export const shuffleArray = (array) => {
+  let currentIndex = array.length, randomIndex;
+  while (currentIndex !== 0) {
+    randomIndex = Math.floor(Math.random() * currentIndex);
+    currentIndex--;
+    [array[currentIndex], array[randomIndex]] = [array[randomIndex], array[currentIndex]];
+  }
+  return array;
 };
 
-// Fisher-Yates (aka Knuth) Shuffle Algorithm
-export const shuffleArray = (array) => {
-    let currentIndex = array.length, randomIndex;
-    const newArray = [...array]; // Clone array to avoid mutating original
-
-    while (currentIndex !== 0) {
-        randomIndex = Math.floor(Math.random() * currentIndex);
-        currentIndex--;
-        [newArray[currentIndex], newArray[randomIndex]] = [
-            newArray[randomIndex], newArray[currentIndex]];
+export const safeJsonParse = (jsonString, defaultValue = null) => {
+  if (!jsonString || typeof jsonString !== 'string' || jsonString.trim() === '') return defaultValue;
+  try {
+    if (jsonString.startsWith('[') || jsonString.startsWith('{')) {
+      return JSON.parse(jsonString);
     }
-
-    return newArray;
+    return defaultValue;
+  } catch (e) {
+    return defaultValue;
+  }
 };

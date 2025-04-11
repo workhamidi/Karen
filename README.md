@@ -70,9 +70,11 @@ npm install @react-oauth/google
 npm install gapi-script
 
 npm install @mui/material @emotion/react @emotion/styled @mui/icons-material react-swipeable framer-motion
-
-
+npm install workbox-sw
 npm install react-swipeable date-fns
+
+
+
 
 
 

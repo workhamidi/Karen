@@ -1,123 +1,118 @@
-import React, { createContext, useState, useEffect, useContext, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect } from 'react';
 
-const SettingsContext = createContext(null);
-
-export const useSettings = () => useContext(SettingsContext);
-
-// Define keys for localStorage consistently
-const SPREADSHEET_ID_KEY = 'spreadsheetId';
-const CLIENT_ID_KEY = 'googleClientId'; // Use a specific key
-const CLIENT_SECRET_KEY = 'googleClientSecret'; // Use a specific key
-const GEMINI_API_KEY = 'geminiApiKey'; // If you still use this
-const AUTH_TOKEN_KEY = 'googleAuthToken'; // Keep if used elsewhere directly
+const SettingsContext = createContext();
 
 export const SettingsProvider = ({ children }) => {
-    const [spreadsheetId, setSpreadsheetId] = useState('');
-    const [clientId, setClientId] = useState(''); // State for Client ID
-    const [clientSecret, setClientSecret] = useState('');
-    const [geminiApiKey, setGeminiApiKey] = useState('');
-    const [googleAuthToken, setGoogleAuthToken] = useState(null); // If needed
-    const [isLoaded, setIsLoaded] = useState(false);
+  const [clientId, setClientId] = useState('');
+  const [clientSecret, setClientSecret] = useState('');
+  const [spreadsheetId, setSpreadsheetId] = useState('');
+  const [reviewDisplayMode, setReviewDisplayMode] = useState('word');
+  const [detailLanguage, setDetailLanguage] = useState('fa');
+  const [appLanguage, setAppLanguage] = useState('fa');
+  const [geminiApiKey, setGeminiApiKey] = useState('');
+  const [selectedTheme, setSelectedTheme] = useState('default');
+  const [geminiModel, setGeminiModel] = useState('gemini-2.0-flash-thinking-exp-01-21');
+  const [vocabLevel, setVocabLevel] = useState('B1');
+  const [isSettingsLoaded, setIsSettingsLoaded] = useState(false);
 
-    useEffect(() => {
-        console.log('[SettingsProvider] Loading settings from localStorage...');
-        try {
-            const storedSheetId = localStorage.getItem(SPREADSHEET_ID_KEY) || '';
-            const storedClientId = localStorage.getItem(CLIENT_ID_KEY) || '';
-            const storedClientSecret = localStorage.getItem(CLIENT_SECRET_KEY) || '';
-            const storedGeminiKey = localStorage.getItem(GEMINI_API_KEY) || '';
-            const storedAuthToken = localStorage.getItem(AUTH_TOKEN_KEY);
+  useEffect(() => {
+    const loadSettings = () => {
+      const savedClientId = localStorage.getItem('clientId') || '';
+      const savedClientSecret = localStorage.getItem('clientSecret') || '';
+      const savedSpreadsheetId = localStorage.getItem('spreadsheetId') || '';
+      const savedReviewDisplayMode = localStorage.getItem('reviewDisplayMode') || 'word';
+      const savedDetailLanguage = localStorage.getItem('detailLanguage') || 'fa';
+      const savedAppLanguage = localStorage.getItem('appLanguage') || 'fa';
+      const savedGeminiApiKey = localStorage.getItem('geminiApiKey') || '';
+      const savedTheme = localStorage.getItem('selectedTheme') || 'default';
+      const savedGeminiModel = localStorage.getItem('geminiModel') || 'gemini-2.0-flash-thinking-exp-01-21';
+      const savedVocabLevel = localStorage.getItem('vocabLevel') || 'B1';
 
-            setSpreadsheetId(storedSheetId);
-            setClientId(storedClientId);
-            setClientSecret(storedClientSecret);
-            setGeminiApiKey(storedGeminiKey);
-
-            if (storedAuthToken) {
-                setGoogleAuthToken(storedAuthToken);
-            }
-             console.log('[SettingsProvider] Settings loaded.');
-        } catch (error) {
-            console.error("[SettingsProvider] Error loading settings/token from localStorage:", error);
-        } finally {
-             setIsLoaded(true);
-        }
-    }, []);
-
-     const updateSpreadsheetId = useCallback((id) => {
-         try {
-             setSpreadsheetId(id);
-             localStorage.setItem(SPREADSHEET_ID_KEY, id);
-             console.log('[SettingsProvider] Spreadsheet ID updated.');
-         } catch (error) {
-              console.error("[SettingsProvider] Error saving spreadsheet ID to localStorage:", error);
-         }
-     }, []);
-
-     // Add update function for Client ID
-      const updateClientId = useCallback((id) => {
-         try {
-             setClientId(id);
-             localStorage.setItem(CLIENT_ID_KEY, id);
-              console.log('[SettingsProvider] Client ID updated.');
-         } catch (error) {
-              console.error("[SettingsProvider] Error saving client ID to localStorage:", error);
-         }
-     }, []);
-
-
-     const updateClientSecret = useCallback((secret) => {
-        try {
-            setClientSecret(secret);
-            localStorage.setItem(CLIENT_SECRET_KEY, secret);
-             console.log('[SettingsProvider] Client Secret updated.');
-        } catch (error) {
-             console.error("[SettingsProvider] Error saving client secret to localStorage:", error);
-        }
-    }, []);
-
-     const updateGeminiApiKey = useCallback((key) => {
-         try {
-             setGeminiApiKey(key);
-             localStorage.setItem(GEMINI_API_KEY, key);
-              console.log('[SettingsProvider] Gemini API Key updated.');
-         } catch (error) {
-              console.error("[SettingsProvider] Error saving Gemini API key to localStorage:", error);
-         }
-     }, []);
-
-     const updateAuthToken = useCallback((token) => {
-         try {
-             setGoogleAuthToken(token);
-             if (token) {
-                 localStorage.setItem(AUTH_TOKEN_KEY, token);
-             } else {
-                 localStorage.removeItem(AUTH_TOKEN_KEY);
-             }
-              console.log('[SettingsProvider] Auth Token updated.');
-         } catch (error) {
-              console.error("[SettingsProvider] Error saving auth token to localStorage:", error);
-         }
-     }, []);
-
-
-    const value = {
-        spreadsheetId,
-        clientId, // Provide Client ID
-        clientSecret,
-        geminiApiKey,
-        googleAuthToken,
-        updateSpreadsheetId,
-        updateClientId, // Provide update function for Client ID
-        updateClientSecret,
-        updateGeminiApiKey,
-        updateAuthToken,
-        isSettingsLoaded: isLoaded,
+      setClientId(savedClientId);
+      setClientSecret(savedClientSecret);
+      setSpreadsheetId(savedSpreadsheetId);
+      setReviewDisplayMode(savedReviewDisplayMode);
+      setDetailLanguage(savedDetailLanguage);
+      setAppLanguage(savedAppLanguage);
+      setGeminiApiKey(savedGeminiApiKey);
+      setSelectedTheme(savedTheme);
+      setGeminiModel(savedGeminiModel);
+      setVocabLevel(savedVocabLevel);
+      setIsSettingsLoaded(true);
     };
 
-    return (
-        <SettingsContext.Provider value={value}>
-            {isLoaded ? children : null }
-        </SettingsContext.Provider>
-    );
+    loadSettings();
+  }, []);
+
+  const saveSettings = (newSettings) => {
+    if (newSettings.clientId !== undefined) {
+      setClientId(newSettings.clientId);
+      localStorage.setItem('clientId', newSettings.clientId);
+    }
+    if (newSettings.clientSecret !== undefined) {
+      setClientSecret(newSettings.clientSecret);
+      localStorage.setItem('clientSecret', newSettings.clientSecret);
+    }
+    if (newSettings.spreadsheetId !== undefined) {
+      setSpreadsheetId(newSettings.spreadsheetId);
+      localStorage.setItem('spreadsheetId', newSettings.spreadsheetId);
+    }
+    if (newSettings.reviewDisplayMode !== undefined) {
+      setReviewDisplayMode(newSettings.reviewDisplayMode);
+      localStorage.setItem('reviewDisplayMode', newSettings.reviewDisplayMode);
+    }
+    if (newSettings.detailLanguage !== undefined) {
+      setDetailLanguage(newSettings.detailLanguage);
+      localStorage.setItem('detailLanguage', newSettings.detailLanguage);
+    }
+    if (newSettings.appLanguage !== undefined) {
+      setAppLanguage(newSettings.appLanguage);
+      localStorage.setItem('appLanguage', newSettings.appLanguage);
+    }
+    if (newSettings.geminiApiKey !== undefined) {
+      setGeminiApiKey(newSettings.geminiApiKey);
+      localStorage.setItem('geminiApiKey', newSettings.geminiApiKey);
+    }
+    if (newSettings.selectedTheme !== undefined) {
+      setSelectedTheme(newSettings.selectedTheme);
+      localStorage.setItem('selectedTheme', newSettings.selectedTheme);
+    }
+    if (newSettings.geminiModel !== undefined) {
+      setGeminiModel(newSettings.geminiModel);
+      localStorage.setItem('geminiModel', newSettings.geminiModel);
+    }
+    if (newSettings.vocabLevel !== undefined) {
+      setVocabLevel(newSettings.vocabLevel);
+      localStorage.setItem('vocabLevel', newSettings.vocabLevel);
+    }
+  };
+
+  return (
+    <SettingsContext.Provider
+      value={{
+        clientId,
+        clientSecret,
+        spreadsheetId,
+        reviewDisplayMode,
+        detailLanguage,
+        appLanguage,
+        geminiApiKey,
+        selectedTheme,
+        geminiModel,
+        vocabLevel,
+        isSettingsLoaded,
+        saveSettings,
+      }}
+    >
+      {children}
+    </SettingsContext.Provider>
+  );
+};
+
+export const useSettings = () => {
+  const context = useContext(SettingsContext);
+  if (context === undefined) {
+    throw new Error('useSettings must be used within a SettingsProvider');
+  }
+  return context;
 };

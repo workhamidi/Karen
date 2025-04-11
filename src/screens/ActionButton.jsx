@@ -1,10 +1,12 @@
 import React from 'react';
 import Button from '@mui/material/Button';
 import Typography from '@mui/material/Typography';
-import Box from '@mui/material/Box';
-import { colors } from '../styles/colors';
+import { useSettings } from '../context/SettingsContext';
+import theme from '../styles/theme';
 
 const ActionButton = ({ title, IconComponent, color, onClick }) => {
+  const { selectedTheme } = useSettings();
+
   return (
     <Button
       variant="contained"
@@ -12,24 +14,30 @@ const ActionButton = ({ title, IconComponent, color, onClick }) => {
       sx={{
         width: '100%',
         backgroundColor: color,
-        color: colors.text,
-        padding: '25px 20px', // Increased padding for height
-        borderRadius: '15px', // Corresponds to borderRadius in RN
+        color: theme.palette.text.button(selectedTheme),
+        padding: '25px 20px',
+        borderRadius: '15px',
         marginBottom: '20px',
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
         justifyContent: 'center',
-        minHeight: '130px', // Ensure minimum height
+        minHeight: '130px',
         '&:hover': {
-          backgroundColor: color, // Keep color on hover or slightly darken
+          backgroundColor: color,
           opacity: 0.9,
         },
-        textTransform: 'none', // Prevent uppercase text
+        textTransform: 'none',
       }}
     >
-      <IconComponent sx={{ fontSize: 40, marginBottom: '10px', color: colors.icon }} />
-      <Typography variant="h6" component="span" sx={{ fontWeight: 'bold' }}>
+      <IconComponent
+        sx={{
+          fontSize: 40,
+          marginBottom: '10px',
+          color: theme.palette.icon.primary(selectedTheme),
+        }}
+      />
+      <Typography variant="h6" component="span">
         {title}
       </Typography>
     </Button>
