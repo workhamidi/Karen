@@ -12,6 +12,11 @@ const MainScreen = () => {
   const navigate = useNavigate();
   const { appLanguage, selectedTheme } = useSettings();
 
+  // Get theme colors
+  const primaryColor = theme.palette.primary.main(selectedTheme);
+  const secondaryColor = theme.palette.secondary.main(selectedTheme);
+  const errorColor = theme.palette.error.main(selectedTheme); // Using error color for the third button
+
   return (
     <Box
       sx={{
@@ -36,19 +41,19 @@ const MainScreen = () => {
         <ActionButton
           title={appLanguage === 'fa' ? 'مرور کلمات' : 'Review Words'}
           IconComponent={BookSearchIcon}
-          color={theme.palette.primary.main(selectedTheme)}
+          color={primaryColor}
           onClick={() => navigate('/review')}
         />
         <ActionButton
           title={appLanguage === 'fa' ? 'افزودن کلمات' : 'Add Words'}
           IconComponent={AddBoxIcon}
-          color={theme.palette.secondary.main(selectedTheme)}
+          color={secondaryColor}
           onClick={() => navigate('/add')}
         />
         <ActionButton
           title={appLanguage === 'fa' ? 'تنظیم کلیدها' : 'Set Keys'}
           IconComponent={VpnKeyIcon}
-          color={theme.palette.tertiary.main(selectedTheme)}
+          color={errorColor} // Changed from tertiary to error color
           onClick={() => navigate('/settings')}
         />
       </Box>

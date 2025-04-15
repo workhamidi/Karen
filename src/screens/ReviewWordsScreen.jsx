@@ -8,8 +8,8 @@ import Typography from '@mui/material/Typography';
 import { useSwipeable } from 'react-swipeable';
 import { useGoogleSheetApi } from '../api/GoogleSheetApi';
 import { useSettings } from '../context/SettingsContext';
-import { shuffleArray } from '../utils/helpers';
-import { getTodayDateString, getCurrentTimestampString } from '../utils/dateUtils';
+import { useAuth } from '../context/AuthContext';
+import { shuffleArray, getTodayDateString, getCurrentTimestampString } from '../utils/helpers';
 import ReviewHeader from '../components/ReviewHeader';
 import Flashcard from '../components/Flashcard';
 import ReviewControls from '../components/ReviewControls';
@@ -19,25 +19,26 @@ import theme from '../styles/theme';
 
 const ReviewWordsScreen = () => {
   const navigate = useNavigate();
-  const { 
-    reviewDisplayMode, 
-    isSettingsLoaded, 
-    clientId, 
-    clientSecret, 
-    spreadsheetId, 
+  const {
+    reviewDisplayMode,
+    isSettingsLoaded,
+    clientId,
+    clientSecret,
+    spreadsheetId,
     appLanguage,
     selectedTheme
   } = useSettings();
-  const { 
-    isApiReady, 
-    isSignInReady, 
-    isGapiLoading, 
-    isSignedIn, 
-    error: apiError, 
-    signIn, 
-    signOut, 
-    getAllWords, 
-    updateWord 
+  const { isSignedIn } = useAuth();
+  const {
+    isApiReady,
+    isSignInReady,
+    isGapiLoading,
+    error: apiError,
+    signIn,
+    signOut,
+    getAllWords,
+    updateWord,
+    clearError: clearApiError
   } = useGoogleSheetApi({ clientId, spreadsheetId });
 
   const [allWords, setAllWords] = useState([]);
@@ -48,6 +49,7 @@ const ReviewWordsScreen = () => {
   const [reviewPhase, setReviewPhase] = useState('loading');
   const [showDetails, setShowDetails] = useState(false);
   const [settingsChecked, setSettingsChecked] = useState(false);
+  const [dataFetched, setDataFetched] = useState(false);
 
   const todayString = useMemo(() => getTodayDateString(), []);
 
@@ -64,56 +66,66 @@ const ReviewWordsScreen = () => {
     }
   }, [isSettingsLoaded, settingsChecked, clientId, clientSecret, spreadsheetId, navigate, appLanguage]);
 
-  const clearError = () => setError(null);
+  const clearError = useCallback(() => {
+    setError(null);
+    clearApiError();
+  }, [clearApiError]);
 
   const prepareReviewLists = useCallback((words) => {
-    const dueWords = words.filter(word => {
-      return !word.is_deleted && word.spaced_repetition_dates.includes(todayString);
-    });
+    if (!words) return;
+    const dueWords = words.filter(word => 
+      !word.is_deleted && 
+      word.spaced_repetition_dates?.includes(todayString)
+    );
     setAllWords(words);
-    setReviewList(shuffleArray(dueWords));
+    setReviewList(shuffleArray([...dueWords]));
     setCurrentIndex(0);
     setReviewPhase(dueWords.length > 0 ? 'daily' : 'finished_daily');
     setIsLoading(false);
   }, [todayString]);
 
+  // Modified effect to avoid the infinite loop, using dataFetched flag instead of allWords.length
   useEffect(() => {
     const fetchData = async () => {
-      if (!settingsChecked || !isApiReady || !isSignedIn || allWords.length > 0) return;
+      if (!settingsChecked || !isApiReady || !isSignedIn || dataFetched) return;
       setIsLoading(true);
       setReviewPhase('loading');
       try {
-        const fetchedWords = await getAllWords({ forceRefresh: false });
+        const fetchedWords = await getAllWords({ forceRefresh: false });        
         prepareReviewLists(fetchedWords || []);
+        setDataFetched(true);
       } catch (err) {
-        setError(apiError || err.message || (appLanguage === 'fa' ? 'خطا در دریافت کلمات.' : 'Error fetching words.'));
+        setError(err.message || (appLanguage === 'fa' ? 'خطا در دریافت کلمات.' : 'Error fetching words.'));
         setReviewPhase('error');
         setAllWords([]);
         setReviewList([]);
         setIsLoading(false);
+        setDataFetched(true); // Mark as fetched even on error
       }
     };
     fetchData();
-  }, [settingsChecked, isApiReady, isSignedIn, allWords.length, getAllWords, prepareReviewLists, apiError, appLanguage]);
+  }, [settingsChecked, isApiReady, isSignedIn, dataFetched, getAllWords, prepareReviewLists, appLanguage]);
 
+  // Modified effect to not depend on allWords.length
   useEffect(() => {
     if (!isSettingsLoaded || !settingsChecked) {
       setIsLoading(true);
+      setReviewPhase('loading');
       return;
     }
     if (!isApiReady && isGapiLoading) {
       setIsLoading(true);
       setReviewPhase('loading');
-    } else if (!isSignedIn && isApiReady) {
+    } else if (!isSignedIn && isSignInReady) {
       setIsLoading(false);
       setReviewPhase('prompt_signin');
-    } else if (allWords.length === 0 && isSignedIn && isApiReady) {
+    } else if (!dataFetched && isSignedIn && isApiReady) {
       setIsLoading(true);
       setReviewPhase('loading');
     } else {
       setIsLoading(false);
     }
-  }, [isSettingsLoaded, settingsChecked, isApiReady, isGapiLoading, isSignedIn, allWords.length]);
+  }, [isSettingsLoaded, settingsChecked, isApiReady, isGapiLoading, isSignedIn, isSignInReady, dataFetched]);
 
   const goToNextCard = useCallback(() => {
     if (currentIndex < reviewList.length - 1) {
@@ -143,6 +155,7 @@ const ReviewWordsScreen = () => {
       last_reviewed: getCurrentTimestampString(),
       memory_strength: Math.min(currentWord.memory_strength + (isCorrect ? 1 : -1), 100),
       spaced_repetition_dates: updatedDates,
+      version: (currentWord.version || 0) + 1
     };
 
     try {
@@ -152,9 +165,9 @@ const ReviewWordsScreen = () => {
       setAllWords(prev => prev.map(word => (word.word === currentWord.word ? updatedWord : word)));
       goToNextCard();
     } catch (err) {
-      setError(apiError || err.message || (appLanguage === 'fa' ? 'خطا در به‌روزرسانی کلمه.' : 'Error updating word.'));
+      setError(err.message || (appLanguage === 'fa' ? 'خطا در به‌روزرسانی کلمه.' : 'Error updating word.'));
     }
-  }, [reviewList, currentIndex, updateWord, goToNextCard, apiError, todayString, appLanguage]);
+  }, [reviewList, currentIndex, updateWord, goToNextCard, todayString, appLanguage]);
 
   const handleStartReviewAll = useCallback(() => {
     const sortedWords = [...allWords].sort((a, b) => {
@@ -162,13 +175,13 @@ const ReviewWordsScreen = () => {
       if (wrongDiff !== 0) return wrongDiff;
       return a.correct_reviews - b.correct_reviews;
     });
-    setReviewList(shuffleArray(sortedWords));
+    setReviewList(shuffleArray([...sortedWords]));
     setCurrentIndex(0);
     setReviewPhase('all');
   }, [allWords]);
 
-  const handleFinishReview = () => navigate('/');
-  const handleFlipCard = () => setShowDetails(prev => !prev);
+  const handleFinishReview = useCallback(() => navigate('/'), [navigate]);
+  const handleFlipCard = useCallback(() => setShowDetails(prev => !prev), []);
 
   const swipeHandlers = useSwipeable({
     onSwipedLeft: goToNextCard,
@@ -181,14 +194,17 @@ const ReviewWordsScreen = () => {
   const forceRefreshData = useCallback(async () => {
     if (!isApiReady || !isSignedIn) return;
     setIsLoading(true);
+    setDataFetched(false); // Reset the dataFetched flag to allow refetching
     try {
       const fetchedWords = await getAllWords({ forceRefresh: true });
       prepareReviewLists(fetchedWords || []);
+      setDataFetched(true);
     } catch (err) {
-      setError(apiError || err.message || (appLanguage === 'fa' ? 'خطا در بارگذاری مجدد کلمات.' : 'Error refreshing words.'));
+      setError(err.message || (appLanguage === 'fa' ? 'خطا در بارگذاری مجدد کلمات.' : 'Error refreshing words.'));
       setIsLoading(false);
+      setDataFetched(true);
     }
-  }, [isApiReady, isSignedIn, getAllWords, prepareReviewLists, apiError, appLanguage]);
+  }, [isApiReady, isSignedIn, getAllWords, prepareReviewLists, appLanguage]);
 
   const renderMainContent = () => {
     const currentWordData = reviewList[currentIndex];
@@ -201,8 +217,8 @@ const ReviewWordsScreen = () => {
       return <LoadingIndicator message={loadingMessage} sx={{ flexGrow: 1 }} />;
     }
 
-    if (reviewPhase === 'error' || apiError) {
-      return <ErrorMessage error={error || apiError || (appLanguage === 'fa' ? 'خطای ناشناخته رخ داد.' : 'An unknown error occurred.')} sx={{ m: 2 }} />;
+    if (reviewPhase === 'error' || error) {
+      return <ErrorMessage error={error || (appLanguage === 'fa' ? 'خطای ناشناخته رخ داد.' : 'An unknown error occurred.')} onClear={clearError} sx={{ m: 2 }} />;
     }
 
     if (!isSignedIn && isSignInReady) {
@@ -229,10 +245,10 @@ const ReviewWordsScreen = () => {
     if (reviewPhase === 'finished_daily') {
       return (
         <Box sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', p: 2 }}>
-          <Paper sx={{ 
-            p: 3, 
-            borderRadius: '20px', 
-            textAlign: 'center', 
+          <Paper sx={{
+            p: 3,
+            borderRadius: '20px',
+            textAlign: 'center',
             boxShadow: '0 10px 20px rgba(0,0,0,0.1)',
             background: theme.palette.background.card(selectedTheme),
           }}>
@@ -261,8 +277,8 @@ const ReviewWordsScreen = () => {
                 borderColor: theme.palette.primary.main(selectedTheme),
                 borderRadius: '12px',
                 padding: '10px 24px',
-                '&:hover': { 
-                  backgroundColor: theme.palette.primary.main(selectedTheme), 
+                '&:hover': {
+                  backgroundColor: theme.palette.primary.main(selectedTheme),
                   color: theme.palette.text.button(selectedTheme),
                   borderColor: theme.palette.primary.main(selectedTheme),
                 },
@@ -278,10 +294,10 @@ const ReviewWordsScreen = () => {
     if (reviewPhase === 'finished_all') {
       return (
         <Box sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', p: 2 }}>
-          <Paper sx={{ 
-            p: 3, 
-            borderRadius: '20px', 
-            textAlign: 'center', 
+          <Paper sx={{
+            p: 3,
+            borderRadius: '20px',
+            textAlign: 'center',
             boxShadow: '0 10px 20px rgba(0,0,0,0.1)',
             background: theme.palette.background.card(selectedTheme),
           }}>
@@ -350,6 +366,7 @@ const ReviewWordsScreen = () => {
           <ReviewControls
             onCorrect={() => handleReviewAction(true)}
             onIncorrect={() => handleReviewAction(false)}
+            selectedTheme={selectedTheme}
           />
         )}
       </Box>

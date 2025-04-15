@@ -5,7 +5,7 @@ import CheckIcon from '@mui/icons-material/Check';
 import CloseIcon from '@mui/icons-material/Close';
 import theme from '../styles/theme';
 
-const ReviewControls = ({ onCorrect, onIncorrect, disabled = false }) => {
+const ReviewControls = ({ onCorrect, onIncorrect, disabled = false, selectedTheme = 'default' }) => {
     return (
         <Box
             sx={{
@@ -21,12 +21,12 @@ const ReviewControls = ({ onCorrect, onIncorrect, disabled = false }) => {
                 onClick={onIncorrect}
                 disabled={disabled}
                 sx={{
-                    backgroundColor: theme.palette.error.main,
-                    color: theme.palette.text.button,
+                    backgroundColor: theme.palette.error.main(selectedTheme),
+                    color: theme.palette.text.button(selectedTheme),
                     width: 60,
                     height: 60,
                     '&:hover': {
-                        backgroundColor: theme.palette.error.hover,
+                        backgroundColor: theme.palette.error.hover?.(selectedTheme) || theme.palette.error.main(selectedTheme),
                     }
                 }}
             >
@@ -36,12 +36,12 @@ const ReviewControls = ({ onCorrect, onIncorrect, disabled = false }) => {
                 onClick={onCorrect}
                 disabled={disabled}
                 sx={{
-                    backgroundColor: theme.palette.success.main,
-                    color: theme.palette.text.button,
+                    backgroundColor: theme.palette.success.main(selectedTheme),
+                    color: theme.palette.text.button(selectedTheme),
                     width: 60,
                     height: 60,
                     '&:hover': {
-                        backgroundColor: theme.palette.success.hover,
+                        backgroundColor: theme.palette.success.hover?.(selectedTheme) || theme.palette.success.main(selectedTheme),
                     }
                 }}
             >

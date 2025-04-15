@@ -9,8 +9,10 @@ import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import TextField from '@mui/material/TextField';
 import Button from '@mui/material/Button';
 import Alert from '@mui/material/Alert';
+import GoogleIcon from '@mui/icons-material/Google';
 import { useSettings } from '../context/SettingsContext';
 import { useGoogleSheetApi } from '../api/GoogleSheetApi';
+import { useAuth } from '../context/AuthContext';
 import { generatePrompt } from '../utils/prompt';
 import theme from '../styles/theme';
 
@@ -38,9 +40,9 @@ const AddWordsScreen = () => {
     vocabLevel,
     selectedTheme 
   } = useSettings();
+  const { isSignedIn } = useAuth();
   const { 
     addWords, 
-    isSignedIn, 
     isApiReady, 
     isSignInReady, 
     signIn, 
@@ -72,6 +74,7 @@ const AddWordsScreen = () => {
       setIsLoading(true);
       try {
         const wordsWithAudio = await Promise.all(pendingRequest.words.map(async (word) => ({
+          ...word,
           word: word.word.toLowerCase(),
           example_audio_url: await getAudioUrls(word.word),
         })));
@@ -132,10 +135,10 @@ const AddWordsScreen = () => {
       if (!generatedText) {
         throw new Error(appLanguage === 'fa' ? 'پاسخی از Gemini API دریافت نشد.' : 'No response received from Gemini API.');
       }
-
+      
       const cleanedText = generatedText.replace(/```json\n?/, '').replace(/\n?```/, '').trim();
       const generatedWords = JSON.parse(cleanedText);
-
+      
       if (!Array.isArray(generatedWords)) {
         throw new Error(
           appLanguage === 'fa'
@@ -147,7 +150,7 @@ const AddWordsScreen = () => {
       const wordsWithAudio = await Promise.all(generatedWords.map(async (word) => ({
         ...word,
         example_audio_url: await getAudioUrls(word.word),
-      })));
+      })));   
 
       localStorage.setItem('pendingAddWords', JSON.stringify({ words: wordsWithAudio }));
       setPendingRequest({ words: wordsWithAudio });
@@ -159,7 +162,7 @@ const AddWordsScreen = () => {
   };
 
   const handleNumWordsChange = (e) => {
-    const value = parseInt(e.target.value, 10) || 2;
+    const value = parseInt(e.target.value, 10) || 1;
     setNumWords(value);
     setPrompt(generatePrompt(value, vocabLevel));
   };
@@ -195,6 +198,21 @@ const AddWordsScreen = () => {
           gap: 2,
         }}
       >
+        {!isSignedIn && (
+          <Button
+            variant="contained"
+            startIcon={<GoogleIcon />}
+            onClick={signIn}
+            disabled={!isSignInReady}
+            sx={{
+              backgroundColor: theme.palette.primary.main(selectedTheme),
+              color: theme.palette.text.button(selectedTheme),
+              '&:hover': { backgroundColor: theme.palette.primary.main(selectedTheme), opacity: 0.9 },
+            }}
+          >
+            {appLanguage === 'fa' ? 'ورود با گوگل' : 'Sign in with Google'}
+          </Button>
+        )}
         <TextField
           label={appLanguage === 'fa' ? 'تعداد کلمات' : 'Number of Words'}
           type="number"
@@ -207,31 +225,6 @@ const AddWordsScreen = () => {
         {apiError && (
           <Alert severity="error">
             {appLanguage === 'fa' ? apiError : apiError}
-          </Alert>
-        )}
-        {!isSignedIn && (
-          <Alert severity="warning">
-            {appLanguage === 'fa'
-              ? isSignInReady
-                ? 'لطفاً ابتدا وارد حساب گوگل شوید.'
-                : 'سیستم ورود آماده نیست. لطفاً چند لحظه صبر کنید.'
-              : isSignInReady
-              ? 'Please sign in to your Google account first.'
-              : 'Sign-in system is not ready. Please wait a moment.'}
-            {isSignInReady && (
-              <Button
-                variant="contained"
-                onClick={signIn}
-                sx={{
-                  ml: 2,
-                  backgroundColor: theme.palette.secondary.main(selectedTheme),
-                  color: theme.palette.text.button(selectedTheme),
-                  '&:hover': { backgroundColor: theme.palette.secondary.main(selectedTheme), opacity: 0.9 },
-                }}
-              >
-                {appLanguage === 'fa' ? 'ورود' : 'Sign In'}
-              </Button>
-            )}
           </Alert>
         )}
         {editPrompt && (

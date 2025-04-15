@@ -11,6 +11,13 @@ import Button from '@mui/material/Button';
 import Select from '@mui/material/Select';
 import MenuItem from '@mui/material/MenuItem';
 import Alert from '@mui/material/Alert';
+import Dialog from '@mui/material/Dialog';
+import DialogActions from '@mui/material/DialogActions';
+import DialogContent from '@mui/material/DialogContent';
+import DialogContentText from '@mui/material/DialogContentText';
+import DialogTitle from '@mui/material/DialogTitle';
+import CircularProgress from '@mui/material/CircularProgress';
+import Backdrop from '@mui/material/Backdrop';
 import { useSettings } from '../context/SettingsContext';
 import { useGoogleSheetApi } from '../api/GoogleSheetApi';
 import theme from '../styles/theme';
@@ -28,7 +35,7 @@ const SettingsScreen = () => {
     vocabLevel,
     saveSettings,
   } = useSettings();
-  const { syncCacheWithSheet, clearCache } = useGoogleSheetApi({ clientId, spreadsheetId });
+  const { syncCacheWithSheet, clearCache, clearAllData, signIn } = useGoogleSheetApi({ clientId, spreadsheetId });
 
   const [localClientId, setLocalClientId] = useState(clientId);
   const [localClientSecret, setLocalClientSecret] = useState(clientSecret);
@@ -39,6 +46,9 @@ const SettingsScreen = () => {
   const [localVocabLevel, setLocalVocabLevel] = useState(vocabLevel);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [isClearing, setIsClearing] = useState(false);
+  const [openClearAllDialog, setOpenClearAllDialog] = useState(false);
 
   const handleSave = () => {
     saveSettings({
@@ -55,23 +65,56 @@ const SettingsScreen = () => {
   };
 
   const handleSyncCache = async () => {
+    setIsSyncing(true);
     try {
       await syncCacheWithSheet();
       setSuccess(appLanguage === 'fa' ? 'کش با موفقیت همگام‌سازی شد.' : 'Cache synced successfully.');
       setTimeout(() => setSuccess(null), 3000);
     } catch (err) {
       setError(appLanguage === 'fa' ? 'خطا در همگام‌سازی کش.' : 'Error syncing cache.');
+    } finally {
+      setIsSyncing(false);
     }
   };
 
   const handleClearCache = async () => {
+    setIsClearing(true);
     try {
       await clearCache();
       setSuccess(appLanguage === 'fa' ? 'کش با موفقیت پاک شد.' : 'Cache cleared successfully.');
       setTimeout(() => setSuccess(null), 3000);
     } catch (err) {
       setError(appLanguage === 'fa' ? 'خطا در پاک کردن کش.' : 'Error clearing cache.');
+    } finally {
+      setIsClearing(false);
     }
+  };
+
+  const handleClearAllData = async () => {
+    setOpenClearAllDialog(false);
+    setIsClearing(true);
+    try {
+      saveSettings({ clientId, clientSecret, spreadsheetId, geminiApiKey });
+      await clearAllData();
+      setSuccess(appLanguage === 'fa' ? 'تمام داده‌ها با موفقیت پاک شد.' : 'All data cleared successfully.');
+      setTimeout(() => setSuccess(null), 3000);
+    } catch (err) {
+      setError(appLanguage === 'fa' ? 'خطا در پاک کردن تمام داده‌ها.' : 'Error clearing all data.');
+    } finally {
+      setIsClearing(false);
+    }
+  };
+
+  const handleSignIn = () => {
+    if (!localClientId || !localSpreadsheetId) {
+      setError(appLanguage === 'fa' ? 'لطفاً شناسه کلاینت و Spreadsheet ID را وارد کنید.' : 'Please enter Client ID and Spreadsheet ID.');
+      return;
+    }
+    saveSettings({
+      clientId: localClientId,
+      spreadsheetId: localSpreadsheetId,
+    });
+    signIn();
   };
 
   return (
@@ -185,8 +228,20 @@ const SettingsScreen = () => {
           {appLanguage === 'fa' ? 'ذخیره' : 'Save'}
         </Button>
         <Button
+          variant="contained"
+          onClick={handleSignIn}
+          sx={{
+            backgroundColor: theme.palette.secondary.main(localTheme),
+            color: theme.palette.text.button(localTheme),
+            '&:hover': { backgroundColor: theme.palette.secondary.main(localTheme), opacity: 0.9 },
+          }}
+        >
+          {appLanguage === 'fa' ? 'ورود به گوگل' : 'Sign in with Google'}
+        </Button>
+        <Button
           variant="outlined"
           onClick={handleSyncCache}
+          disabled={isSyncing}
           sx={{
             color: theme.palette.primary.main(localTheme),
             borderColor: theme.palette.primary.main(localTheme),
@@ -197,12 +252,23 @@ const SettingsScreen = () => {
         <Button
           variant="outlined"
           onClick={handleClearCache}
+          disabled={isClearing}
           sx={{
             color: theme.palette.error.main(localTheme),
             borderColor: theme.palette.error.main(localTheme),
           }}
         >
           {appLanguage === 'fa' ? 'پاک کردن کش' : 'Clear Cache'}
+        </Button>
+        <Button
+          variant="outlined"
+          onClick={() => setOpenClearAllDialog(true)}
+          sx={{
+            color: theme.palette.error.main(localTheme),
+            borderColor: theme.palette.error.main(localTheme),
+          }}
+        >
+          {appLanguage === 'fa' ? 'پاک کردن تمام داده‌ها' : 'Clear All Data'}
         </Button>
         {error && (
           <Alert severity="error" sx={{ mt: 2 }}>
@@ -215,6 +281,35 @@ const SettingsScreen = () => {
           </Alert>
         )}
       </Box>
+      <Backdrop
+        sx={{ color: '#fff', zIndex: (theme) => theme.zIndex.drawer + 1 }}
+        open={isSyncing || isClearing}
+      >
+        <CircularProgress color="inherit" />
+      </Backdrop>
+      <Dialog
+        open={openClearAllDialog}
+        onClose={() => setOpenClearAllDialog(false)}
+      >
+        <DialogTitle>
+          {appLanguage === 'fa' ? 'تأیید پاک کردن تمام داده‌ها' : 'Confirm Clear All Data'}
+        </DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            {appLanguage === 'fa'
+              ? 'آیا مطمئن هستید که می‌خواهید تمام داده‌های مرورگر و Google Sheet را پاک کنید؟ این عملیات قابل بازگشت نیست.'
+              : 'Are you sure you want to clear all data from the browser and Google Sheet? This action cannot be undone.'}
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setOpenClearAllDialog(false)}>
+            {appLanguage === 'fa' ? 'لغو' : 'Cancel'}
+          </Button>
+          <Button onClick={handleClearAllData} color="error">
+            {appLanguage === 'fa' ? 'پاک کردن' : 'Clear'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };
