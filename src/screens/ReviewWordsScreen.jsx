@@ -38,7 +38,8 @@ const ReviewWordsScreen = () => {
     signOut,
     getAllWords,
     updateWord,
-    clearError: clearApiError
+    clearError: clearApiError,
+    syncCacheWithSheet
   } = useGoogleSheetApi({ clientId, spreadsheetId });
 
   const [allWords, setAllWords] = useState([]);
@@ -105,6 +106,21 @@ const ReviewWordsScreen = () => {
     };
     fetchData();
   }, [settingsChecked, isApiReady, isSignedIn, dataFetched, getAllWords, prepareReviewLists, appLanguage]);
+
+  // Add this useEffect to sync the cache with the sheet when the user logs in
+  useEffect(() => {
+    const syncData = async () => {
+      if (isSignedIn && isApiReady) {
+        try {
+          await syncCacheWithSheet();
+          console.log('Cache synced with Google Sheet on login.');
+        } catch (error) {
+          setError(error.message || (appLanguage === 'fa' ? 'خطا در همگام‌سازی کش با ورود.' : 'Error syncing cache on login.'));
+        }
+      }
+    };
+    syncData();
+  }, [isSignedIn, isApiReady, syncCacheWithSheet, appLanguage]);
 
   // Modified effect to not depend on allWords.length
   useEffect(() => {
@@ -399,3 +415,4 @@ const ReviewWordsScreen = () => {
 };
 
 export default ReviewWordsScreen;
+

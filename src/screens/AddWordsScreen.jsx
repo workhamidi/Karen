@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Box from '@mui/material/Box';
 import AppBar from '@mui/material/AppBar';
@@ -18,12 +18,26 @@ import theme from '../styles/theme';
 
 const getAudioUrls = async (word) => {
   try {
-    const audioUrl = `https://api.dictionaryapi.dev/media/pronunciations/en/${word}-us.mp3`;
-    const response = await fetch(audioUrl, { method: 'HEAD' });
-    if (response.ok) {
-      return [audioUrl];
+    const apiUrl = `https://api.dictionaryapi.dev/api/v2/entries/en/${word}`;
+    const response = await fetch(apiUrl);
+    const data = await response.json();
+
+    if (response.ok && Array.isArray(data) && data.length > 0) {
+      const pronunciations = data[0].phonetics;
+      if (pronunciations && Array.isArray(pronunciations)) {
+        const usAudio = pronunciations.find(p => p.audio && p.audio.includes('us.mp3'))?.audio;
+        if (usAudio) {
+          return [usAudio];
+        } else {
+          const firstAudio = pronunciations.find(p => p.audio)?.audio;
+          return firstAudio ? [firstAudio] : ['No US audio URL found'];
+        }
+      } else {
+        return ['No phonetics found'];
+      }
+    } else {
+      return ['No audio URL found'];
     }
-    return ['No audio URL found'];
   } catch {
     return ['Error fetching audio'];
   }
@@ -31,22 +45,22 @@ const getAudioUrls = async (word) => {
 
 const AddWordsScreen = () => {
   const navigate = useNavigate();
-  const { 
-    appLanguage, 
-    geminiApiKey, 
-    clientId, 
-    spreadsheetId, 
-    geminiModel, 
+  const {
+    appLanguage,
+    geminiApiKey,
+    clientId,
+    spreadsheetId,
+    geminiModel,
     vocabLevel,
-    selectedTheme 
+    selectedTheme
   } = useSettings();
   const { isSignedIn } = useAuth();
-  const { 
-    addWords, 
-    isApiReady, 
-    isSignInReady, 
-    signIn, 
-    error: apiError 
+  const {
+    addWords,
+    isApiReady,
+    isSignInReady,
+    signIn,
+    error: apiError
   } = useGoogleSheetApi({ clientId, spreadsheetId });
 
   const [numWords, setNumWords] = useState(2);
@@ -59,6 +73,17 @@ const AddWordsScreen = () => {
     const saved = localStorage.getItem('pendingAddWords');
     return saved ? JSON.parse(saved) : null;
   });
+  const [tempPrompt, setTempPrompt] = useState(prompt);
+  const [isCancelling, setIsCancelling] = useState(false);
+  const fetchControllerRef = useRef(null);
+  const [showCancelButton, setShowCancelButton] = useState(false);
+  const isMounted = useRef(true);
+
+  useEffect(() => {
+    return () => {
+      isMounted.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (!clientId || !spreadsheetId || !geminiApiKey) {
@@ -68,34 +93,48 @@ const AddWordsScreen = () => {
     }
   }, [clientId, spreadsheetId, geminiApiKey, appLanguage, navigate]);
 
-  useEffect(() => {
-    const processPendingRequest = async () => {
+  const processPendingRequest = useCallback(async () => {
       if (!pendingRequest || !isSignedIn || !isApiReady) return;
       setIsLoading(true);
+      setShowCancelButton(false);
       try {
         const wordsWithAudio = await Promise.all(pendingRequest.words.map(async (word) => ({
           ...word,
           word: word.word.toLowerCase(),
           example_audio_url: await getAudioUrls(word.word),
         })));
-        await addWords(wordsWithAudio);
+        const { added, duplicates } = await addWords(wordsWithAudio);
+
+        if (isMounted.current) {
         setResultMessage(
           appLanguage === 'fa'
-            ? `دریافت: ${pendingRequest.words.length} لغت، اضافه‌شده: ${wordsWithAudio.length} لغت`
-            : `Received: ${pendingRequest.words.length} words, Added: ${wordsWithAudio.length} words`
+            ? `دریافت: ${pendingRequest.words.length} لغت، اضافه‌شده: ${added} لغت، تکراری: ${duplicates} لغت`
+            : `Received: ${pendingRequest.words.length} words, Added: ${added} words, Duplicates: ${duplicates} words`
         );
         localStorage.removeItem('pendingAddWords');
         setPendingRequest(null);
+        }
       } catch (err) {
+        if (isMounted.current) {
         setError(err.message || (appLanguage === 'fa' ? 'خطای ناشناخته رخ داد.' : 'An unknown error occurred.'));
-      } finally {
-        setIsLoading(false);
       }
-    };
-    processPendingRequest();
+    } finally {
+        if (isMounted.current) {
+      setIsLoading(false);
+      setShowCancelButton(false);
+    }
+      }
   }, [pendingRequest, isSignedIn, isApiReady, addWords, appLanguage]);
 
+  useEffect(() => {
+    processPendingRequest();
+  }, [processPendingRequest]);
+
   const handleGenerateWords = async () => {
+    if (!isSignedIn) {
+      setError(appLanguage === 'fa' ? 'لطفاً ابتدا وارد حساب گوگل شوید.' : 'Please sign in to your Google account first.');
+      return;
+    }
     if (!geminiApiKey) {
       setError(appLanguage === 'fa' ? 'کلید API Gemini وارد نشده است.' : 'Gemini API Key is not set.');
       return;
@@ -108,10 +147,18 @@ const AddWordsScreen = () => {
       setError(appLanguage === 'fa' ? 'تعداد کلمات باید حداقل ۱ باشد.' : 'Number of words must be at least 1.');
       return;
     }
+    if (numWords > 10) {
+      setError(appLanguage === 'fa' ? 'تعداد کلمات نمی تواند بیشتر از 10 باشد.' : 'Number of words cannot be more than 10.');
+      return;
+    }
 
     setIsLoading(true);
     setError(null);
     setResultMessage(null);
+    setIsCancelling(false);
+    setShowCancelButton(true);
+
+    fetchControllerRef.current = new AbortController();
 
     try {
       const response = await fetch(
@@ -122,23 +169,28 @@ const AddWordsScreen = () => {
           body: JSON.stringify({
             contents: [{ parts: [{ text: prompt }] }],
           }),
+          signal: fetchControllerRef.current.signal,
         }
-      );
+  );
+
+      if (fetchControllerRef.current.signal.aborted) {
+        throw new Error(appLanguage === 'fa' ? 'درخواست لغو شد.' : 'Request cancelled.');
+      }
 
       if (!response.ok) {
         throw new Error(appLanguage === 'fa' ? 'خطا در دریافت پاسخ از Gemini API.' : 'Error fetching response from Gemini API.');
       }
 
       const data = await response.json();
-      const generatedText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+      const generatedText = data?.candidates?.[0?.content?.parts?.[0]?.text];
 
       if (!generatedText) {
         throw new Error(appLanguage === 'fa' ? 'پاسخی از Gemini API دریافت نشد.' : 'No response received from Gemini API.');
       }
-      
+
       const cleanedText = generatedText.replace(/```json\n?/, '').replace(/\n?```/, '').trim();
       const generatedWords = JSON.parse(cleanedText);
-      
+
       if (!Array.isArray(generatedWords)) {
         throw new Error(
           appLanguage === 'fa'
@@ -149,15 +201,36 @@ const AddWordsScreen = () => {
 
       const wordsWithAudio = await Promise.all(generatedWords.map(async (word) => ({
         ...word,
+        word: word.word.toLowerCase(),
         example_audio_url: await getAudioUrls(word.word),
-      })));   
+      })));
 
       localStorage.setItem('pendingAddWords', JSON.stringify({ words: wordsWithAudio }));
       setPendingRequest({ words: wordsWithAudio });
 
     } catch (err) {
-      setError(err.message || (appLanguage === 'fa' ? 'خطای ناشناخته رخ داد.' : 'An unknown error occurred.'));
-      setIsLoading(false);
+      if (err.name === 'AbortError') {
+        setError(appLanguage === 'fa' ? 'درخواست لغو شد.' : 'Request cancelled.');
+      } else {
+        setError(err.message || (appLanguage === 'fa' ? 'خطای ناشناخته رخ داد.' : 'An unknown error occurred.'));
+      }
+      if (isMounted.current) {
+        setIsLoading(false);
+        setShowCancelButton(false);
+      }
+    } finally {
+      if (isMounted.current) {
+        setIsLoading(false);
+        fetchControllerRef.current = null;
+      }
+    }
+};
+
+  const handleCancelRequest = () => {
+    if (fetchControllerRef.current) {
+      setIsCancelling(true);
+      fetchControllerRef.current.abort();
+      setShowCancelButton(false);
     }
   };
 
@@ -165,6 +238,23 @@ const AddWordsScreen = () => {
     const value = parseInt(e.target.value, 10) || 1;
     setNumWords(value);
     setPrompt(generatePrompt(value, vocabLevel));
+    const cappedValue = Math.min(value, 10);
+    setNumWords(cappedValue);
+    setPrompt(generatePrompt(cappedValue, vocabLevel));
+  };
+
+  const handleEditPrompt = () => {
+    setEditPrompt(true);
+    setTempPrompt(prompt);
+  };
+
+  const handleSavePrompt = () => {
+    setPrompt(tempPrompt);
+    setEditPrompt(false);
+  };
+
+  const handleCancelPrompt = () => {
+    setEditPrompt(false);
   };
 
   return (
@@ -220,7 +310,7 @@ const AddWordsScreen = () => {
           onChange={handleNumWordsChange}
           fullWidth
           variant="outlined"
-          inputProps={{ min: 1 }}
+          inputProps={{ min: 1, max: 10 }}
         />
         {apiError && (
           <Alert severity="error">
@@ -228,47 +318,87 @@ const AddWordsScreen = () => {
           </Alert>
         )}
         {editPrompt && (
-          <TextField
-            label={appLanguage === 'fa' ? 'پرامپت' : 'Prompt'}
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            fullWidth
-            multiline
-            rows={10}
-            variant="outlined"
-          />
+          <>
+            <TextField
+              label={appLanguage === 'fa' ? 'پرامپت' : 'Prompt'}
+              value={tempPrompt}
+              onChange={(e) => setTempPrompt(e.target.value)}
+              fullWidth
+              multiline
+              rows={10}
+              variant="outlined"
+            />
+            <Box sx={{ display: 'flex', gap: 2, justifyContent: 'flex-end' }}>
+              <Button
+                variant="contained"
+                onClick={handleSavePrompt}
+                sx={{
+                  backgroundColor: 'green',
+                  color: theme.palette.text.button(selectedTheme),
+                  '&:hover': { backgroundColor: 'green', opacity: 0.9 },
+                }}
+              >
+                {appLanguage === 'fa' ? 'ذخیره' : 'Save'}
+              </Button>
+              <Button
+                variant="contained"
+                onClick={handleCancelPrompt}
+                sx={{
+                  backgroundColor: 'red',
+                  color: theme.palette.text.button(selectedTheme),
+                  '&:hover': { backgroundColor: 'red', opacity: 0.9 },
+                }}
+              >
+                {appLanguage === 'fa' ? 'انصراف' : 'Cancel'}
+              </Button>
+            </Box>
+          </>
         )}
-        <Button
-          variant="outlined"
-          onClick={() => setEditPrompt((prev) => !prev)}
-          sx={{ color: theme.palette.primary.main(selectedTheme), borderColor: theme.palette.primary.main(selectedTheme) }}
-        >
-          {editPrompt
-            ? appLanguage === 'fa'
-              ? 'بستن ویرایش پرامپت'
-              : 'Close Prompt Edit'
-            : appLanguage === 'fa'
-            ? 'ویرایش پرامپت'
-            : 'Edit Prompt'}
-        </Button>
-        <Button
-          variant="contained"
-          onClick={handleGenerateWords}
-          disabled={isLoading || !isSignedIn || !isApiReady || !geminiApiKey}
-          sx={{
-            backgroundColor: theme.palette.primary.main(selectedTheme),
-            color: theme.palette.text.button(selectedTheme),
-            '&:hover': { backgroundColor: theme.palette.primary.main(selectedTheme), opacity: 0.9 },
-          }}
-        >
-          {isLoading
-            ? appLanguage === 'fa'
-              ? 'در حال ارسال...'
-              : 'Sending...'
-            : appLanguage === 'fa'
-            ? 'ارسال درخواست'
-            : 'Send Request'}
-        </Button>
+        {!editPrompt && (
+          <Button
+            variant="outlined"
+            onClick={handleEditPrompt}
+            sx={{ color: theme.palette.primary.main(selectedTheme), borderColor: theme.palette.primary.main(selectedTheme) }}
+          >
+            {appLanguage === 'fa' ? 'ویرایش پرامپت' : 'Edit Prompt'}
+          </Button>
+        )}
+        <Box sx={{ display: 'flex', justifyContent: 'center', gap: 2 }}>
+          <Button
+            variant="contained"
+            onClick={handleGenerateWords}
+            disabled={isLoading || !isSignedIn || !isApiReady || !geminiApiKey || isCancelling || showCancelButton}
+            sx={{
+              backgroundColor: theme.palette.primary.main(selectedTheme),
+              color: theme.palette.text.button(selectedTheme),
+              '&:hover': { backgroundColor: theme.palette.primary.main(selectedTheme), opacity: 0.9 },
+            }}
+          >
+            {isLoading
+              ? appLanguage === 'fa'
+                ? 'در حال ارسال...'
+                : 'Sending...'
+              : appLanguage === 'fa'
+                ? 'ارسال درخواست'
+                : 'Send Request'}
+          </Button>
+          {showCancelButton && (
+            <Button
+              variant="contained"
+              onClick={handleCancelRequest}
+              disabled={isCancelling}
+              sx={{
+                backgroundColor: 'red',
+                color: theme.palette.text.button(selectedTheme),
+                '&:hover': { backgroundColor: 'red', opacity: 0.9 },
+              }}
+            >
+              {isCancelling
+                ? appLanguage === 'fa' ? 'در حال لغو...' : 'Cancelling...'
+                : appLanguage === 'fa' ? 'لغو' : 'Cancel'}
+            </Button>
+          )}
+        </Box>
         {error && (
           <Alert severity="error" sx={{ mt: 2 }}>
             {error}

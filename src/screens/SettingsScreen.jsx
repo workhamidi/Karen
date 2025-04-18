@@ -35,7 +35,7 @@ const SettingsScreen = () => {
     vocabLevel,
     saveSettings,
   } = useSettings();
-  const { syncCacheWithSheet, clearCache, clearAllData, signIn } = useGoogleSheetApi({ clientId, spreadsheetId });
+  const { syncCacheWithSheet, clearCache, clearAllData } = useGoogleSheetApi({ clientId, spreadsheetId });
 
   const [localClientId, setLocalClientId] = useState(clientId);
   const [localClientSecret, setLocalClientSecret] = useState(clientSecret);
@@ -103,18 +103,6 @@ const SettingsScreen = () => {
     } finally {
       setIsClearing(false);
     }
-  };
-
-  const handleSignIn = () => {
-    if (!localClientId || !localSpreadsheetId) {
-      setError(appLanguage === 'fa' ? 'لطفاً شناسه کلاینت و Spreadsheet ID را وارد کنید.' : 'Please enter Client ID and Spreadsheet ID.');
-      return;
-    }
-    saveSettings({
-      clientId: localClientId,
-      spreadsheetId: localSpreadsheetId,
-    });
-    signIn();
   };
 
   return (
@@ -226,17 +214,6 @@ const SettingsScreen = () => {
           }}
         >
           {appLanguage === 'fa' ? 'ذخیره' : 'Save'}
-        </Button>
-        <Button
-          variant="contained"
-          onClick={handleSignIn}
-          sx={{
-            backgroundColor: theme.palette.secondary.main(localTheme),
-            color: theme.palette.text.button(localTheme),
-            '&:hover': { backgroundColor: theme.palette.secondary.main(localTheme), opacity: 0.9 },
-          }}
-        >
-          {appLanguage === 'fa' ? 'ورود به گوگل' : 'Sign in with Google'}
         </Button>
         <Button
           variant="outlined"

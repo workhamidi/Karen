@@ -91,21 +91,32 @@ export const deleteWord = async ({ spreadsheetId, executeApiCall, findWordRowInd
 export const addWords = async ({ spreadsheetId, executeApiCall, findWordRowIndex, isOnline }, wordsData) => {
   const db = await initDB();
   if (!wordsData || wordsData.length === 0) return null;
+
+  let addedCount = 0;
+  let duplicateCount = 0;
   const newWords = [];
+
   for (const wordData of wordsData) {
     const existingIndex = await findWordRowIndex({ spreadsheetId, executeApiCall }, wordData.word);
     if (existingIndex === -1) {
       newWords.push(wordData);
+    } else {
+      duplicateCount++;
     }
   }
   if (newWords.length === 0) return null;
+
+  if (newWords.length === 0) return { added: addedCount, duplicates: duplicateCount };
   if (!isOnline) {
     await enqueueOfflineOperation({ type: 'add', data: newWords });
     for (const wordData of newWords) {
       await db.put('words', { ...wordData, version: 0 });
+      addedCount++;
     }
     return true;
+    return { added: addedCount, duplicates: duplicateCount };
   }
+
   const values = newWords.map(mapWordObjectToRow);
   const appendRange = `${SHEET_NAME}!A${SHEET_START_ROW}`;
   const result = await executeApiCall(
@@ -113,8 +124,15 @@ export const addWords = async ({ spreadsheetId, executeApiCall, findWordRowIndex
     { spreadsheetId, range: appendRange, valueInputOption: 'USER_ENTERED', insertDataOption: 'INSERT_ROWS', resource: { values } },
     'addWords'
   );
+
+  if (result?.updates?.updatedRows) {
+    addedCount = newWords.length;
   for (const wordData of newWords) {
     await db.put('words', { ...wordData, version: 0 });
   }
   return result;
+    return { added: addedCount, duplicates: duplicateCount };
+  } else {
+    return { added: 0, duplicates: wordsData.length };
+  }
 };
